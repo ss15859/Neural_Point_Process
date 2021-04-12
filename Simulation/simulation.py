@@ -14,7 +14,7 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import geopandas as gpd
-from scipy.special import gammaincc, gammainccinv
+from scipy.special import gammaincc, gammainccinv, gamma
 
 from inversion import parameter_dict2array, to_days, branching_ratio, \
     haversine, expected_aftershocks
@@ -31,6 +31,14 @@ def simulate_aftershock_time(log10_c, omega, log10_tau, size=1):
     y = np.random.uniform(size=size)
 
     return gammainccinv(-omega, (1 - y) * gammaincc(-omega, c / tau)) * tau - c
+
+# def simulate_aftershock_time(log10_c, omega, log10_tau, size=1):
+#     # time delay in days
+#     c = np.power(10, log10_c)
+#     tau = np.power(10, log10_tau)
+#     y = np.random.uniform(size=size)
+
+#     return gammainccinv(-omega, (1-y)*gamma(-omega)) * tau - c
 
 
 def simulate_aftershock_place(log10_d, gamma, rho, mi, mc):
@@ -99,8 +107,10 @@ def generate_background_events(polygon, timewindow_start, timewindow_end,
     n_background = np.random.poisson(lam=expected_n_background)
 
     # generate too many events, afterwards filter those that are in the polygon
-    n_generate = int(np.round(n_background * rectangle_area / area * 1.2))
-
+#     n_generate = int(np.round(n_background * rectangle_area / area * 1.2))
+    muT = np.power(10, parameters["log10_mu"]) * timewindow_length
+    n_generate = n_background
+    
     print("  number of background events needed:", n_background)
     print("  generating", n_generate, "to throw away those outside the polygon")
 

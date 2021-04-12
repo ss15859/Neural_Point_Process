@@ -11,24 +11,26 @@ if __name__ == '__main__':
     fn_store = 'my_synthetic_catalog.csv'
     shape_coords = [list([a[1], a[0]]) for a in (np.load("california_shape.npy"))]
     caliregion = Polygon(shape_coords)
-    burn_start = dt.datetime(1961, 1, 1)
+    burn_start = dt.datetime(1871, 1, 1)
     primary_start = dt.datetime(1971, 1, 1)
-    end = dt.datetime(2105, 1, 2)
+    end = dt.datetime(2021, 1, 1)
 
     delta_m = 0.1
     mc = 3.0
     beta = 2.4
 
     parameters = {
-        'log10_mu': -7.5,
-        'log10_k0': -2.43,
-        'a': 1.69,
-        'log10_c': -2.95,
-        'omega': -0.03,
-        'log10_tau': 10.99,
-        'log10_d': -0.35,
-        'gamma': 1.22,
-        'rho': 0.51
+    'log10_mu': -7.5,
+    'log10_k0': -2.49,
+    'a': 1.69,
+    'log10_c': -2.95,
+    'omega': -0.03,
+    'log10_tau': 3.99,
+    'log10_d': -0.35,
+    'gamma': 1.22,
+    'rho': 0.51,
+    'M0':3.0,
+    'beta':2.4
     }
 
     # np.random.seed(777)
