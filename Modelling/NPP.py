@@ -158,3 +158,27 @@ class NPP():
         
         es = NPP.CustomEarlyStopping()
         model.fit([input_RNN,input_CHFN,input_CMFN],epochs=30,batch_size=256,validation_split=0.2,callbacks=[es])
+
+        
+    def set_test_data(self,times,mags):
+        
+        ## format the input data
+        dM_test = np.delete(mags,0)
+        dT_test = np.ediff1d(times) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
+        n = dT_test.shape[0]
+        n2 = dM_test.shape[0]
+        input_RNN_times = np.array( [ dT_test[i:i+time_step] for i in range(n-time_step) ]).reshape(n-time_step,time_step,1)
+        input_RNN_mags = np.array( [ dM_test[i:i+time_step] for i in range(n2-time_step) ]).reshape(n2-time_step,time_step,1)
+        self.input_RNN_test = np.concatenate((input_RNN_times,input_RNN_mags),axis=2)
+        self.input_CHFN_test = dT_test[-n+time_step:].reshape(n-time_step,1)
+        self.input_CMFN_test =dM_test[-n+time_step:].reshape(n-time_step,1)
+        
+        return self
+        
+        
+    def predict_eval(self):
+        
+        [self.lam,self.Int_lam,self.mag_dist,self.Int_mag_dist] = model.predict([self.input_RNN_test,self.input_CHFN_test,self.input_CMFN_test],batch_size=self.input_RNN_test.shape[0])
+        self.LL = np.log(self.lam+1e-10) - self.Int_lam  # log-liklihood
+        
+        return self
