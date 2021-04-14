@@ -28,13 +28,19 @@ class NPP():
         self.T_train=times
         self.M_train=mags
         
+        # remove first magnitude since our input is time intervals
+        
         dM_train = np.delete(mags,0)
 
         dT_train = np.ediff1d(times) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
         n = dT_train.shape[0]
         n2 = dM_train.shape[0]
+        
+        # creates a rolling matrix that shifts along one 1 input every column
+        
         input_RNN_times = np.array( [ dT_train[i:i+self.time_step] for i in range(n-self.time_step) ]).reshape(n-self.time_step,self.time_step,1)
         input_RNN_mags = np.array( [ dM_train[i:i+self.time_step] for i in range(n2-self.time_step) ]).reshape(n2-self.time_step,self.time_step,1)
+        
         self.input_RNN = np.concatenate((input_RNN_times,input_RNN_mags),axis=2)
         self.input_CHFN = dT_train[-n+self.time_step:].reshape(n-self.time_step,1)
         self.input_CMFN =dM_train[-n+self.time_step:].reshape(n-self.time_step,1)
@@ -44,7 +50,7 @@ class NPP():
         
     def set_model(self):
         
-        ## mean and std of the log of the inter-event interval, which will be used for the data standardization
+        ## mean and std of the log of the inter-event interval and magnitudes, which will be used for the data standardization
         mu = np.log(np.ediff1d(self.T_train)).mean()
         sigma = np.log(np.ediff1d(self.T_train)).std()
 
@@ -59,11 +65,11 @@ class NPP():
 
         event_history = layers.Input(shape=(self.time_step,2))
         elapsed_time = layers.Input(shape=(1,)) # input to cumulative hazard function network (the elapsed time from the most recent event)
-        current_mag = layers.Input(shape=(1,)) 
+        current_mag = layers.Input(shape=(1,)) # input to cumulative magnitude function
 
 
         ## log-transformation and standardization
-        # event_history_nmlz = layers.Lambda(lambda x: (K.log(x)-mu)/sigma )(event_history) ## probs have to do matrix equivalent for this
+
         elapsed_time_nmlz = layers.Lambda(lambda x: (K.log(x)-mu)/sigma )(elapsed_time) 
 
         numpyA = np.array([[1/sigma,0],[0,1/sigma1]])
@@ -88,7 +94,7 @@ class NPP():
         for i in range(self.size_layer_chfn-1):
             hidden = layers.Dense(self.size_nn,activation='tanh',kernel_initializer=abs_glorot_uniform,kernel_constraint=keras.constraints.NonNeg())(hidden) # positive weights
 
-        ## the first hidden layer in the cummulative hazard function network
+        ## the first hidden layer in the cummulative magnitude function network
         hidden_mu = layers.Dense(self.size_nn,kernel_initializer=abs_glorot_uniform,kernel_constraint=keras.constraints.NonNeg(),use_bias=False)(current_mag_nmlz) # elapsed time -> the 1st hidden layer, positive weights
         hidden_rnn_mag = layers.Dense(self.size_nn)(output_rnn) # rnn output -> the 1st hidden layer
         hidden_mag = layers.Lambda(lambda inputs: K.tanh(inputs[0]+inputs[1]) )([hidden_mu,hidden_rnn_mag,hidden_tau])
@@ -116,6 +122,7 @@ class NPP():
         self.model.compile(keras.optimizers.Adam(lr=lr))
         return self
     
+    ## Class for early stopping based on validation loss
     
     class CustomEarlyStopping(keras.callbacks.Callback):
     
@@ -158,7 +165,7 @@ class NPP():
         
         return self
 
-        
+        ## repeat of above function, now for the test data
     def set_test_data(self,times,mags):
         
         ## format the input data
@@ -166,14 +173,18 @@ class NPP():
         dT_test = np.ediff1d(times) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
         n = dT_test.shape[0]
         n2 = dM_test.shape[0]
+        
         input_RNN_times = np.array( [ dT_test[i:i+self.time_step] for i in range(n-self.time_step) ]).reshape(n-self.time_step,self.time_step,1)
         input_RNN_mags = np.array( [ dM_test[i:i+self.time_step] for i in range(n2-self.time_step) ]).reshape(n2-self.time_step,self.time_step,1)
+        
         self.input_RNN_test = np.concatenate((input_RNN_times,input_RNN_mags),axis=2)
         self.input_CHFN_test = dT_test[-n+self.time_step:].reshape(n-self.time_step,1)
         self.input_CMFN_test =dM_test[-n+self.time_step:].reshape(n-self.time_step,1)
         
         return self
         
+        
+        # predict and calculate the log-likelihood
         
     def predict_eval(self):
         

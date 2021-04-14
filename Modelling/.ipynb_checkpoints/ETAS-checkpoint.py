@@ -3,8 +3,6 @@ import numpy as np
 
 
 
-# scale = 1/(gamma(-w)*np.power(tau,-1*w))
-
 def upper_gamma_ext(a, x):
     if a > 0:
         return gammaincc(a, x) * gamma(a)
@@ -13,11 +11,8 @@ def upper_gamma_ext(a, x):
     else:
         return (upper_gamma_ext(a + 1, x) - np.power(x, a)*np.exp(-x)) / a
 
-# def h(t,tau,c,w):
-#     return scale*np.exp(-t/tau)/(np.power(t+c,(1+w)))
-
-# def k(m):
-#     return k0*np.exp(alpha*(m-M0))/(np.power(d*np.exp(gama*(m-M0)),(1+rho)))
+    
+# expected number of aftershocks
 
 def k(m,k0,alpha,M0,d,gama,rho,c,tau,w):
     
@@ -33,11 +28,13 @@ def k(m,k0,alpha,M0,d,gama,rho,c,tau,w):
     
     return number_factor*area_factor*time_factor*time_fraction
 
-# def H(t):
-#     return (1/gamma(-w))*gammainc(-w,t/tau)
+#integrated omori kernel
 
 def H(t,w,c,tau):
     return 1 - gammaincc(-w,(t+c)/tau)/gammaincc(-w,c/tau)
+
+
+# omori decay kernel
 
 def f(x,c,tau,w):
     return np.exp(-(x+c)/tau)/(gammaincc(-w,c/tau)*tau*np.power(((x+c)/tau),1+w)*gamma(-w))
