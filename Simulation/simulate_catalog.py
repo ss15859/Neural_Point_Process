@@ -9,7 +9,7 @@ if __name__ == '__main__':
     fn_store = 'my_synthetic_catalog.csv'
     burn_start = dt.datetime(1969, 1, 1)
     primary_start = dt.datetime(1969, 1, 1)
-    end = dt.datetime(2120, 1, 1)
+    end = dt.datetime(2020, 1, 1)
     test_end=dt.datetime(1994,1,1)
 
     mc = 3.0
