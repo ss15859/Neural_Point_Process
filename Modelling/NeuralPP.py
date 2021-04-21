@@ -113,8 +113,8 @@ class NPP():
 
         ## define model
         self.model = Model(inputs=[event_history,elapsed_time,current_mag],outputs=[l,Int_l,l_mag,Int_l_mag])
-        self.model.add_loss( -K.mean( K.log( 1e-10 + l )+ K.log(1e-10 + l_mag ) - Int_l ) ) # set loss function to be the negative log-likelihood function
-        
+        self.model.add_loss( -K.mean( K.log( 1e-10 + l ) - Int_l ) ) # set loss function to be the negative log-likelihood function
+        #+ K.log(1e-10 + l_mag )
         return self
 
     
@@ -160,8 +160,8 @@ class NPP():
     def fit_eval(self,epochs=100,batch_size=256):
         
         es = NPP.CustomEarlyStopping()
-        self.model.fit([self.input_RNN,self.input_CHFN,self.input_CMFN],epochs=epochs,batch_size=batch_size,validation_split=0.2)
-        #,callbacks=[es]
+        self.model.fit([self.input_RNN,self.input_CHFN,self.input_CMFN],epochs=epochs,batch_size=batch_size,validation_split=0.2,callbacks=[es])
+        
         
         return self
 

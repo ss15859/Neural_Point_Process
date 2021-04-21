@@ -16,7 +16,7 @@ import datetime as dt
 import geopandas as gpd
 from scipy.special import gammaincc, gammainccinv, gamma
 
-from inversion import parameter_dict2array, to_days, branching_ratio, \
+from inversion import to_days, branching_ratio, \
     haversine, expected_aftershocks
 from mc_b_est import simulate_magnitudes
 
@@ -24,119 +24,44 @@ from mc_b_est import simulate_magnitudes
 from shapely.geometry import Polygon
 
 
-def simulate_aftershock_time(log10_c, omega, log10_tau, size=1):
+
+def parameter_dict2array(parameters):
+    order = ['mu', 'k0', 'a', 'c', 'omega', 'tau']
+    return np.array([
+        parameters[key] for key in order
+    ])
+
+
+def simulate_aftershock_time(c, omega, tau, size=1):
     # time delay in days
-    c = np.power(10, log10_c)
-    tau = np.power(10, log10_tau)
+
     y = np.random.uniform(size=size)
 
-    return gammainccinv(-omega, (1 - y) * gammaincc(-omega, c / tau)) * tau - c
+    return np.power(np.power(c,omega-1)/(1-y),1/(omega-1))-c
 
-# def simulate_aftershock_time(log10_c, omega, log10_tau, size=1):
-#     # time delay in days
-#     c = np.power(10, log10_c)
-#     tau = np.power(10, log10_tau)
-#     y = np.random.uniform(size=size)
-
-#     return gammainccinv(-omega, (1-y)*gamma(-omega)) * tau - c
+def productivity(m,k0,a,M0):
+    return k0*np.exp(a*(m-M0))
 
 
-def simulate_aftershock_place(log10_d, gamma, rho, mi, mc):
-    # x and y offset in km
-    d = np.power(10, log10_d)
-    d_g = d * np.exp(gamma * (mi - mc))
-    y_r = np.random.uniform(size=len(mi))
-    r = 0
-    phi = np.random.uniform(0, 2 * np.pi, size=len(mi))
-
-    x = r * np.sin(phi)
-    y = r * np.cos(phi)
-
-    return x, y
-
-
-def simulate_aftershock_radius(log10_d, gamma, rho, mi, mc):
-    # x and y offset in km
-    d = np.power(10, log10_d)
-    d_g = d * np.exp(gamma * (mi - mc))
-    y_r = np.random.uniform(size=len(mi))
-    r = np.sqrt(np.power(1 - y_r, -1 / rho) * d_g - d_g)
-
-    return 0
-
-
-def simulate_background_location(latitudes, longitudes, background_probs, scale=0.1, n=1):
-    np.random.seed()
-    keep_idxs = background_probs >= np.random.uniform(size=len(background_probs))
-
-    sample_lats = latitudes[keep_idxs]
-    sample_lons = longitudes[keep_idxs]
-
-    choices = np.floor(np.random.uniform(0, len(sample_lats), size=n)).astype(int)
-
-    lats = sample_lats.iloc[choices] + np.random.normal(loc=0, scale=scale, size=n)
-    lons = sample_lons.iloc[choices] + np.random.normal(loc=0, scale=scale, size=n)
-
-    return lats, lons
-
-
-def generate_background_events(polygon, timewindow_start, timewindow_end,
-                               parameters, beta, mc, delta_m=0,
-                               background_lats=None, background_lons=None,
-                               background_probs=None, gaussian_scale=None
-                               ):
+def generate_background_events(timewindow_start, timewindow_end,
+                               parameters, beta, mc):
+    
     from inversion import polygon_surface, to_days
 
-    theta_without_mu = parameters["log10_k0"], parameters["a"], parameters["log10_c"], parameters["omega"], \
-                       parameters["log10_tau"], parameters["log10_d"], parameters["gamma"], parameters["rho"]
-
-    area = polygon_surface(polygon)
+   
     timewindow_length = to_days(timewindow_end - timewindow_start)
 
-    # area of surrounding rectangle
-    min_lon, min_lat, max_lon, max_lat = polygon.bounds
-    coords = [[min_lon, min_lat],
-              [min_lon, max_lat],
-              [max_lon, max_lat],
-              [max_lon, min_lat]]
-    rectangle = Polygon(coords)
-    rectangle_area = polygon_surface(rectangle)
 
     # number of background events
-    expected_n_background = np.power(10, parameters["log10_mu"]) * area * timewindow_length
+    expected_n_background = parameters["mu"]  * timewindow_length
     n_background = np.random.poisson(lam=expected_n_background)
 
-    # generate too many events, afterwards filter those that are in the polygon
-#     n_generate = int(np.round(n_background * rectangle_area / area * 1.2))
-    muT = np.power(10, parameters["log10_mu"]) * timewindow_length
-    n_generate = n_background
-    
-    print("  number of background events needed:", n_background)
-    print("  generating", n_generate, "to throw away those outside the polygon")
+
 
     # define dataframe with background events
-    catalog = pd.DataFrame(None, columns=["latitude", "longitude", "time", "magnitude", "parent", "generation"])
+    catalog = pd.DataFrame(None, columns=["time", "magnitude", "parent", "generation"])
 
 
-    catalog["latitude"] = np.repeat(36,n_generate)
-    catalog["longitude"] = np.repeat(-122,n_generate)
-
-    catalog = gpd.GeoDataFrame(catalog, geometry=gpd.points_from_xy(catalog.longitude, catalog.latitude))
-    catalog = catalog[catalog.intersects(polygon)].head(n_background)
-
-    # if not enough events fell into the polygon, do it again...
-    while len(catalog) != n_background:
-        print("  didn't create enough events. trying again..")
-
-        # define dataframe with background events
-        catalog = pd.DataFrame(None, columns=["latitude", "longitude", "time", "magnitude", "parent", "generation"])
-
-        # generate lat, long
-        catalog["latitude"] = np.repeat(36,n_generate)
-        catalog["longitude"] = np.repeat(-122,n_generate)
-
-        catalog = gpd.GeoDataFrame(catalog, geometry=gpd.points_from_xy(catalog.longitude, catalog.latitude))
-        catalog = catalog[catalog.intersects(polygon)].head(n_background)
 
     # generate time, magnitude
     catalog["time"] = [
@@ -144,7 +69,7 @@ def generate_background_events(polygon, timewindow_start, timewindow_end,
         + dt.timedelta(days=d) for d in np.random.uniform(0, timewindow_length, size=n_background)
     ]
 
-    catalog["magnitude"] = simulate_magnitudes(n_background, beta=beta, mc=mc - delta_m / 2)
+    catalog["magnitude"] = simulate_magnitudes(n_background, beta=beta, mc=mc)
 
     # info about origin of event
     catalog["generation"] = 0
@@ -156,26 +81,18 @@ def generate_background_events(polygon, timewindow_start, timewindow_end,
     catalog.index += 1
     catalog["gen_0_parent"] = catalog.index
 
+
+
     # simulate number of aftershocks
-    catalog["expected_n_aftershocks"] = expected_aftershocks(
-        catalog["magnitude"],
-        params=[theta_without_mu, mc - delta_m / 2],
-        no_start=True,
-        no_end=True,
-        # axis=1
-    )
+    catalog["expected_n_aftershocks"] = productivity(
+        catalog["magnitude"],parameters["k0"],parameters["a"],mc)
     catalog["n_aftershocks"] = np.random.poisson(lam=catalog["expected_n_aftershocks"])
 
-    return catalog.drop("geometry", axis=1)
+    return catalog
 
 
-def generate_aftershocks(sources, generation, parameters, beta, mc, timewindow_end, timewindow_length,
-                         delta_m=0, earth_radius=6.3781e3,
-                         polygon=None
-                         ):
-    theta = parameter_dict2array(parameters)
-    theta_without_mu = parameters["log10_k0"], parameters["a"], parameters["log10_c"], parameters["omega"], \
-                       parameters["log10_tau"], parameters["log10_d"], parameters["gamma"], parameters["rho"]
+def generate_aftershocks(sources, generation, parameters, beta, mc, timewindow_end, timewindow_length):
+    
 
     all_aftershocks = []
 
@@ -183,15 +100,16 @@ def generate_aftershocks(sources, generation, parameters, beta, mc, timewindow_e
     total_n_aftershocks = sources["n_aftershocks"].sum()
 
     all_deltas = simulate_aftershock_time(
-        log10_c=parameters["log10_c"],
+        c=parameters["c"],
         omega=parameters["omega"],
-        log10_tau=parameters["log10_tau"],
+        tau=parameters["tau"],
         size=total_n_aftershocks
     )
 
+    print(len(all_deltas))
     aftershocks = sources.loc[sources.index.repeat(sources.n_aftershocks)]
 
-    keep_columns = ["time", "latitude", "longitude", "magnitude"]
+    keep_columns = ["time", "magnitude"]
     aftershocks["parent"] = aftershocks.index
 
     for col in keep_columns:
@@ -205,67 +123,36 @@ def generate_aftershocks(sources, generation, parameters, beta, mc, timewindow_e
     aftershocks["time"] = aftershocks["parent_time"] + pd.to_timedelta(aftershocks["time_delta"], unit='d')
     aftershocks.query("time <= @ timewindow_end", inplace=True)
 
-    # location of aftershock
-    aftershocks["radius"] = simulate_aftershock_radius(
-        parameters["log10_d"], parameters["gamma"], parameters["rho"], aftershocks["parent_magnitude"], mc=mc
-    )
-    aftershocks["angle"] = np.random.uniform(0, 2 * np.pi, size=len(aftershocks))
-    aftershocks["degree_lon"] = haversine(
-        np.radians(aftershocks["parent_latitude"]),
-        np.radians(aftershocks["parent_latitude"]),
-        np.radians(0),
-        np.radians(1),
-        earth_radius
-    )
-    aftershocks["degree_lat"] = haversine(
-        np.radians(aftershocks["parent_latitude"] - 0.5),
-        np.radians(aftershocks["parent_latitude"] + 0.5),
-        np.radians(0),
-        np.radians(0),
-        earth_radius
-    )
-    aftershocks["latitude"] = aftershocks["parent_latitude"]
-    aftershocks["longitude"] = aftershocks["parent_longitude"] 
+    
 
     as_cols = [
         "parent",
         "gen_0_parent",
-        "time",
-        "latitude",
-        "longitude"
+        "time"
     ]
-    if polygon is not None:
-        aftershocks = gpd.GeoDataFrame(
-            aftershocks,
-            geometry=gpd.points_from_xy(aftershocks.longitude, aftershocks.latitude)
-        )
-        aftershocks = aftershocks[aftershocks.intersects(polygon)]
+
 
     aadf = aftershocks[as_cols].reset_index(drop=True)
 
     # magnitudes
     n_total_aftershocks = len(aadf.index)
-    aadf["magnitude"] = simulate_magnitudes(n_total_aftershocks, beta=beta, mc=mc - delta_m / 2)
+    aadf["magnitude"] = simulate_magnitudes(n_total_aftershocks, beta=beta, mc=mc)
 
     # info about generation and being background
     aadf["generation"] = generation + 1
     aadf["is_background"] = False
 
     # info for next generation
-    aadf["expected_n_aftershocks"] = expected_aftershocks(
-        aadf["magnitude"],
-        params=[theta_without_mu, mc - delta_m / 2],
-        no_start=True,
-        no_end=True,
-    )
+    aadf["expected_n_aftershocks"] = productivity(
+        aadf["magnitude"],parameters["k0"],parameters["a"],mc)
     aadf["n_aftershocks"] = np.random.poisson(lam=aadf["expected_n_aftershocks"])
 
     return aadf
 
 
-def prepare_auxiliary_catalog(auxiliary_catalog, parameters, mc, delta_m=0):
-    theta_without_mu = parameters["log10_k0"], parameters["a"], parameters["log10_c"], parameters["omega"], \
-                       parameters["log10_tau"], parameters["log10_d"], parameters["gamma"], parameters["rho"]
+def prepare_auxiliary_catalog(auxiliary_catalog, parameters, mc):
+    theta_without_mu = parameters["k0"], parameters["a"], parameters["c"], parameters["omega"], \
+                       parameters["tau"]
 
     catalog = auxiliary_catalog.copy()
 
@@ -280,13 +167,8 @@ def prepare_auxiliary_catalog(auxiliary_catalog, parameters, mc, delta_m=0):
     catalog["gen_0_parent"] = catalog.index
 
     # simulate number of aftershocks
-    catalog["expected_n_aftershocks"] = expected_aftershocks(
-        catalog["magnitude"],
-        params=[theta_without_mu, mc - delta_m / 2],
-        no_start=True,
-        no_end=True,
-        # axis=1
-    )
+    catalog["expected_n_aftershocks"] = productivity(
+        catalog["magnitude"],parameters["k0"],parameters["a"],mc)
 
     catalog["n_aftershocks"] = catalog["expected_n_aftershocks"].apply(
         np.random.poisson,
@@ -297,9 +179,8 @@ def prepare_auxiliary_catalog(auxiliary_catalog, parameters, mc, delta_m=0):
 
 
 def generate_catalog(
-        polygon, timewindow_start, timewindow_end,
-        parameters, mc, beta_main, beta_aftershock=None, delta_m=0,
-        background_lats=None, background_lons=None, background_probs=None, gaussian_scale=None
+        timewindow_start, timewindow_end,
+        parameters, mc, beta_main,gaussian_scale=None
 ):
     """
     Simulates an earthquake catalog.
@@ -322,24 +203,18 @@ def generate_catalog(
         gaussian_scale: sigma to be used when background loations are generated
     """
 
-    if beta_aftershock is None:
-        beta_aftershock = beta_main
+
 
     # generate background events
     print("generating background events..")
     catalog = generate_background_events(
-        polygon, timewindow_start, timewindow_end, parameters, beta=beta_main, mc=mc, delta_m=delta_m,
-        background_lats=background_lats, background_lons=background_lons,
-        background_probs=background_probs, gaussian_scale=gaussian_scale
-    )
+        timewindow_start, timewindow_end, parameters, beta=beta_main, mc=mc)
 
-    theta = parameters["log10_mu"], parameters["log10_k0"], parameters["a"], parameters["log10_c"], parameters["omega"], \
-            parameters["log10_tau"], parameters["log10_d"], parameters["gamma"], parameters["rho"]
-    br = branching_ratio(theta, beta_main)
+    theta = parameters["mu"], parameters["k0"], parameters["a"], parameters["c"], parameters["omega"], \
+            parameters["tau"]
+
 
     print('  number of background events:', len(catalog.index))
-    print('\n  branching ratio:', br)
-    print('  expected total number of events (if time were infinite):', len(catalog.index) * 1 / (1 - br))
 
     generation = 0
     timewindow_length = to_days(timewindow_end - timewindow_start)
@@ -356,7 +231,7 @@ def generate_catalog(
 
         # an array with all aftershocks. to be appended to the catalog
         aftershocks = generate_aftershocks(
-            sources, generation, parameters, beta_aftershock, mc, delta_m=delta_m,
+            sources, generation, parameters, beta_main, mc,
             timewindow_end=timewindow_end, timewindow_length=timewindow_length,
         )
 
@@ -369,8 +244,6 @@ def generate_catalog(
         generation = generation + 1
 
     print('\n\ntotal events simulated!:', len(catalog))
-    catalog = gpd.GeoDataFrame(catalog, geometry=gpd.points_from_xy(catalog.longitude, catalog.latitude))
-#     catalog = catalog[catalog.intersects(polygon)]
-    print('inside the polygon:', len(catalog))
 
-    return catalog.drop("geometry", axis=1)
+
+    return catalog
