@@ -9,18 +9,18 @@ if __name__ == '__main__':
     fn_store = 'my_synthetic_catalog.csv'
     burn_start = dt.datetime(1969, 1, 1)
     primary_start = dt.datetime(1969, 1, 1)
-    end = dt.datetime(2180, 1, 1)
+    end = dt.datetime(2120, 1, 1)
     test_end=dt.datetime(1994,1,1)
 
     mc = 3.0
     beta = 2.4
 
     parameters = {
-    'mu': 0.8,
+    'mu': 1.6,
     'k0': 0.2,
     'a': 1.5,
     'c': 0.5,
-    'omega': 2,
+    'omega': 1.5,
     'tau': np.power(10,3.99),
     'M0':mc,
     'beta':beta

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 from NeuralPP import NPP
 
-from ETAS import marked_ETAS_intensity, marked_likelihood, H
+from ETAS import marked_ETAS_intensity, marked_likelihood, movingaverage
 
 import ETAS
 
@@ -39,7 +39,7 @@ test_times=test_times.astype('float64')
 
 #test-train split
 
-n_test = 3000
+n_test = 8000
 n_train = data.shape[0]
 
 # n_train  = math.floor(0.8*data.shape[0])
@@ -101,7 +101,7 @@ for i in range(num):
 # plot comparison of intensity functions around the largest magnitude event
 
     j = M_test.argmax()-time_step-1
-    index=range(j,j+15)
+    index=range(j,j+30)
     plt.plot(timesplot[index],npp1.lam[index],label='predicted')
     plt.plot(timesplot[index],lam[index],label='true')
     plt.legend()
@@ -113,7 +113,8 @@ for i in range(num):
 
     fig, (ax1, ax2) = plt.subplots(2,sharex=True)
     fig.suptitle('relative absolute error in relation to magnitude of event')
-    ax1.plot(abs(npp1.lam[:,0]-lam)/lam,label="RMSE")
+    ax1.plot(movingaverage(abs(npp1.lam[:,0]-lam)/lam,15),label="RMSE")
+    ax1.set_title('n = '+str(n))
     ax2.scatter(np.where(M_test>5.6)-np.repeat(time_step+1,len(np.where(M_test>5.6))),M_test[M_test>5.6],marker="x",label='Mag > 5.6',c="r")
     # ax2.legend()
     plt.xlabel("time")
@@ -140,7 +141,7 @@ plt.show()
 
 # calculate true mean log-likelihood and plot against training size
 
-TLL = marked_likelihood(T_test-T_test[0],M_test,T_test[-1]-T_test[0],ground,k0,alpha,M0,c,tau,w)/len(T_test)
+TLL = marked_likelihood(T_test,M_test,T_test[-1],ground,k0,alpha,M0,c,tau,w)/len(T_test)
 
 
 plt.plot(ln,LL)
@@ -174,3 +175,10 @@ TLL
 M_test.argmax()-21
 plt.plot(abs(npp1.lam[:,0]-(lam))/(lam))
 ((npp1.lam[:,0]/(lam+ground)).mean())
+
+
+
+def movingaverage(interval, window_size):
+    window= np.ones(int(window_size))/float(window_size)
+    return np.convolve(interval, window, 'same')
+

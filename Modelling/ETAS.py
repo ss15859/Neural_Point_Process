@@ -20,6 +20,8 @@ def H(t,w,c,tau):
     return 1 - c**(w - 1)/(t + c)**(w - 1)
 
 
+# Function to calculate the intesity function from event times and magnitudes
+
 def marked_ETAS_intensity(Tdat,Mdat,ground,k0,alpha,M0,c,tau,w):
     
     lam = np.zeros_like(Tdat)
@@ -35,6 +37,7 @@ def marked_ETAS_intensity(Tdat,Mdat,ground,k0,alpha,M0,c,tau,w):
     
     return lam 
 
+# function to calculate the likelihood of observing an earthquake sequence under the ETAS model 
 
 def marked_likelihood(Tdat,Mdat,maxTime,ground,k0,alpha,M0,c,tau,w):
     temp = np.log(ground)
@@ -49,4 +52,9 @@ def marked_likelihood(Tdat,Mdat,maxTime,ground,k0,alpha,M0,c,tau,w):
     return temp
 
 
+# function used in plotting relative absolute error over time. The function averages a function f(x) over some window [x-r,x+r]
+
+def movingaverage(interval, window_size):
+    window= np.ones(int(window_size))/float(window_size)
+    return np.convolve(interval, window, 'same')
 
