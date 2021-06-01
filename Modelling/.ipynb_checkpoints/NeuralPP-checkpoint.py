@@ -6,6 +6,7 @@ import tensorflow.keras as keras
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
 from tensorflow.keras.models import Model
+from tensorflow.keras import regularizers
 
 
 
@@ -48,7 +49,7 @@ class NPP():
         
         return self
         
-    def set_model(self):
+    def set_model(self,lam):
         
         ## mean and std of the log of the inter-event interval and magnitudes, which will be used for the data standardization
         mu = np.log(np.ediff1d(self.T_train)).mean()
@@ -74,7 +75,7 @@ class NPP():
 
         numpyA = np.array([[1/sigma,0],[0,1/sigma1]])
 
-        def multA(x,A):
+        def multA(x,numpyA):
             A = K.constant(numpyA)
 
             return K.dot(x,A)
@@ -86,13 +87,13 @@ class NPP():
         output_rnn = layers.SimpleRNN(self.size_rnn,input_shape=(self.time_step,2),activation='tanh')(event_history_nmlz)
 
         ## the first hidden layer in the cummulative hazard function network
-        hidden_tau = layers.Dense(self.size_nn,kernel_initializer=abs_glorot_uniform,kernel_constraint=keras.constraints.NonNeg(),use_bias=False)(elapsed_time_nmlz) # elapsed time -> the 1st hidden layer, positive weights
-        hidden_rnn = layers.Dense(self.size_nn)(output_rnn) # rnn output -> the 1st hidden layer
+        hidden_tau = layers.Dense(self.size_nn,kernel_initializer=abs_glorot_uniform,kernel_constraint=keras.constraints.NonNeg(),use_bias=False,kernel_regularizer=regularizers.l2(lam))(elapsed_time_nmlz) # elapsed time -> the 1st hidden layer, positive weights
+        hidden_rnn = layers.Dense(self.size_nn,kernel_regularizer=regularizers.l2(lam))(output_rnn) # rnn output -> the 1st hidden layer
         hidden = layers.Lambda(lambda inputs: K.tanh(inputs[0]+inputs[1]) )([hidden_tau,hidden_rnn])
 
         ## the second and higher hidden layers
         for i in range(self.size_layer_chfn-1):
-            hidden = layers.Dense(self.size_nn,activation='tanh',kernel_initializer=abs_glorot_uniform,kernel_constraint=keras.constraints.NonNeg())(hidden) # positive weights
+            hidden = layers.Dense(self.size_nn,activation='tanh',kernel_initializer=abs_glorot_uniform,kernel_constraint=keras.constraints.NonNeg(),kernel_regularizer=regularizers.l2(lam))(hidden) # positive weights
 
         ## the first hidden layer in the cummulative magnitude function network
         hidden_mu = layers.Dense(self.size_nn,kernel_initializer=abs_glorot_uniform,kernel_constraint=keras.constraints.NonNeg(),use_bias=False)(current_mag_nmlz) # elapsed time -> the 1st hidden layer, positive weights
@@ -114,7 +115,7 @@ class NPP():
         ## define model
         self.model = Model(inputs=[event_history,elapsed_time,current_mag],outputs=[l,Int_l,l_mag,Int_l_mag])
         self.model.add_loss( -K.mean( K.log( 1e-10 + l ) - Int_l ) ) # set loss function to be the negative log-likelihood function
-        #+ K.log(1e-10 + l_mag )
+        #+K.log(1e-10 + l_mag )
         return self
 
     

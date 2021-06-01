@@ -285,7 +285,7 @@ def prepare_catalog(data, mc, coppersmith_multiplier, timewindow_start, timewind
         if potential_targets.shape[0] == 0:
             continue
 
-    
+
         # get source id and info of target events
         potential_targets["source_id"] = source.Index
         potential_targets["source_magnitude"] = source.magnitude
@@ -325,7 +325,7 @@ def triggering_kernel(metrics, params):
     aftershock_number = k0 * np.exp(a * (m - mc))
     time_decay=(omega - 1) * c**(omega - 1) * 1/((time_distance + c)**omega)
 
-    res = aftershock_number * time_decay 
+    res = aftershock_number * time_decay
     return res
 
 
@@ -439,7 +439,7 @@ def neg_log_likelihood(theta, args):
 
 
     source_events["G"] = k0*np.exp(a*(source_events["source_magnitude"]-mc))
-    
+
 
     aftershock_term = ll_aftershock_term(
         source_events["l_hat"],
@@ -448,7 +448,7 @@ def neg_log_likelihood(theta, args):
 
     # space time distribution term
     Pij["likelihood_term"] = (
-        
+
         np.log(omega-1)+(omega-1)*np.log(c)-omega*np.log(Pij["time_distance"] + c))
     distribution_term = Pij["Pij"].mul(Pij["likelihood_term"]).sum()
 
@@ -694,6 +694,6 @@ def invert_etas_params(
         verbose=True
     )
     print('      n_hat:', n_hat)
-    
+
 
     return parameter_array2dict(new_parameters)
