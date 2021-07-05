@@ -114,7 +114,7 @@ class NPP():
 
         ## define model
         self.model = Model(inputs=[event_history,elapsed_time,current_mag],outputs=[l,Int_l,l_mag,Int_l_mag])
-        self.model.add_loss( -K.mean( K.log( 1e-10 + l ) - Int_l ) ) # set loss function to be the negative log-likelihood function
+        self.model.add_loss( -K.mean( K.log( 1e-10 + l ) - Int_l + K.log(1e-10 + l_mag )) ) # set loss function to be the negative log-likelihood function
         #+K.log(1e-10 + l_mag )
         return self
 
@@ -171,7 +171,7 @@ class NPP():
         
         ## format the input data
         dM_test = np.delete(mags,0)
-        dT_test = np.ediff1d(times) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
+        dT_test = np.ediff1d(times)+1e-9 # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
         n = dT_test.shape[0]
         n2 = dM_test.shape[0]
         
@@ -190,6 +190,116 @@ class NPP():
     def predict_eval(self):
         
         [self.lam,self.Int_lam,self.mag_dist,self.Int_mag_dist] = self.model.predict([self.input_RNN_test,self.input_CHFN_test,self.input_CMFN_test],batch_size=self.input_RNN_test.shape[0])
-        self.LL = np.log(self.lam+1e-10) - self.Int_lam  # log-liklihood
+        self.LL = np.log(self.lam+1e-10) - self.Int_lam   + np.log(1e-10 + self.mag_dist )# log-liklihood
         
         return self
+    
+    def forecast(self,hist,len_window,M0):
+        
+        def distfunc(self,x,hist):
+
+            T,M=hist
+            dM_test = np.delete(M,0)
+            dT_test = np.ediff1d(T) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
+            dT_test=np.append(dT_test,x)
+            dM_test=np.append(dM_test,M[-1])
+            n = dT_test.shape[0]
+            n2 = dM_test.shape[0]
+            input_RNN_times = np.array( [ dT_test[i:i+self.time_step] for i in range(n-self.time_step) ]).reshape(n-self.time_step,self.time_step,1)
+            input_RNN_mags = np.array( [ dM_test[i:i+self.time_step] for i in range(n2-self.time_step) ]).reshape(n2-self.time_step,self.time_step,1)
+            input_RNN_test = np.concatenate((input_RNN_times,input_RNN_mags),axis=2)
+            input_CHFN_test = dT_test[-n+self.time_step:].reshape(n-self.time_step,1)
+            input_CMFN_test = dM_test[-n+self.time_step:].reshape(n-self.time_step,1)
+
+            int_l_test = self.model.predict([input_RNN_test,input_CHFN_test,input_CMFN_test],batch_size=input_RNN_test.shape[0])[1]
+
+            return 1-np.exp(-int_l_test[-1])
+
+        def predicttime(self,hist):
+
+            u = np.random.uniform()
+            x_left = np.ediff1d(hist[0]).mean()*1e-5
+            x_right = np.ediff1d(hist[0]).mean()*1e5
+            v = 100
+
+            while(abs(v-u)>0.001):
+                x_center = np.exp((np.log(x_left)+np.log(x_right))/2)
+                v = distfunc(self,x_center,hist)
+                x_left = np.where(v<u,x_center,x_left)
+                x_right = np.where(v>=u,x_center,x_right)
+
+            tau_pred = x_center # predicted interevent interval
+
+
+            return float(tau_pred)
+
+        def magdistfunc(self,x,hist,new_time):
+
+            T, M = hist
+
+            dM_test = np.delete(M,0)
+            dT_test = np.ediff1d(T) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
+            dT_test=np.append(dT_test,new_time)
+            dM_test=np.append(dM_test,x)
+            n = dT_test.shape[0]
+            n2 = dM_test.shape[0]
+            input_RNN_times = np.array( [ dT_test[i:i+self.time_step] for i in range(n-self.time_step) ]).reshape(n-self.time_step,self.time_step,1)
+            input_RNN_mags = np.array( [ dM_test[i:i+self.time_step] for i in range(n2-self.time_step) ]).reshape(n2-self.time_step,self.time_step,1)
+            input_RNN_test = np.concatenate((input_RNN_times,input_RNN_mags),axis=2)
+            input_CHFN_test = dT_test[-n+self.time_step:].reshape(n-self.time_step,1)
+            input_CMFN_test =dM_test[-n+self.time_step:].reshape(n-self.time_step,1)
+
+
+            Int_m_test = self.model.predict([input_RNN_test,input_CHFN_test,input_CMFN_test],batch_size=input_RNN_test.shape[0])[3]
+
+            return Int_m_test[-1]
+
+        def normmagdistfunc(self,x,hist,new_time):
+            return magdistfunc(self,x,hist,new_time)/magdistfunc(self,100000000,hist,new_time)
+
+        def predict_mag(self,hist,M0,new_time):
+
+            u = np.random.uniform()
+            x_left = M0
+            x_right = 10
+            v = 100
+
+
+            while(abs(v-u)>0.001):
+                x_center = (x_left+x_right)/2
+                v = normmagdistfunc(self,x_center,hist,new_time)
+                x_left = np.where(v<u,x_center,x_left)
+                x_right = np.where(v>=u,x_center,x_right)
+
+                if x_left == x_right:
+                    break
+                
+            mu_pred = x_center # predicted interevent interval
+
+            return float(mu_pred)    
+        
+        T_testfor=hist[0]
+        M_testfor=hist[1]
+
+        T_start = T_testfor[-1]
+
+        predictions = []
+
+        while True:
+            
+            new_pred = predicttime(self,hist)
+            new_time = T_testfor[-1]+new_pred
+
+            if new_time-T_start>len_window:
+                break
+
+#             print(new_time, end='\r')
+            predictions.append(new_time)
+
+            M_testfor=np.append(M_testfor,predict_mag(self,[T_testfor,M_testfor],3,new_time))
+            T_testfor=np.append(T_testfor,new_time)
+
+        return(len(predictions))
+    
+   
+

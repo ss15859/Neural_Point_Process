@@ -14,7 +14,7 @@ import ETAS
 # read in data and sort by time
 
 
-data = pd.read_csv('/home/ss15859/Documents/Mini_Project/Neural_Point_Process/Simulation/my_synthetic_catalog.csv',index_col=0)
+data = pd.read_csv('/home/ss15859/PhD/Neural_Point_Process/Simulation/my_synthetic_catalog.csv',index_col=0)
 # data = data.sort_values('time')
 
 
@@ -27,7 +27,7 @@ data = pd.read_csv('/home/ss15859/Documents/Mini_Project/Neural_Point_Process/Si
 times=data['time']
 
 
-test_data = pd.read_csv('/home/ss15859/Documents/Mini_Project/Neural_Point_Process/Simulation/test_catalog.csv',index_col=0)
+test_data = pd.read_csv('/home/ss15859/PhD/Neural_Point_Process/Simulation/test_catalog.csv',index_col=0)
 test_data = test_data.sort_values('time')
 
 
@@ -53,7 +53,7 @@ T_test  = np.array(test_times[:n_test])
 
 # read in and set parameters
 
-params = pd.read_csv('/home/ss15859/Documents/Mini_Project/Neural_Point_Process/Simulation/params.csv')
+params = pd.read_csv('/home/ss15859/PhD/Neural_Point_Process/Simulation/params.csv')
 
 tau=float(params["tau"])
 c= float(params["c"])
@@ -490,14 +490,36 @@ npp1 = NPP(time_step=time_step,size_rnn=64,size_nn=64,size_layer_chfn=3,size_lay
 
 j = M_test.argmax()-time_step-1
 
-# j=1050
-index=range(j,j+70)    
+magsplot = M_test[time_step+1:]
+
+j=190
+index=range(j,j+50)    
 plt.plot(timesplot[index],npp1.lam[index],label='NN')
-plt.plot(timesplot[index],lam[index],label='true')
+plt.plot(timesplot[index],lam[index],label='Data Generating')
+plt.xlabel('time')
+plt.ylabel('intensity')
 # plt.plot(timesplot[index],lamMLE[index],label='MLE')
 plt.legend()
-# plt.title('n=  '+str(i))
+plt.title('n=  '+str(i))
 plt.show()
+
+
+j=1915
+index=range(j,j+50)   
+fig, axs = plt.subplots(2,sharex=True)
+axs[0].plot(timesplot[index],npp1.lam[index],label='NN')
+axs[0].plot(timesplot[index],lam[index],label='Data Generating')
+axs[0].set_ylabel('intensity')
+# plt.plot(timesplot[index],lamMLE[index],label='MLE')
+axs[0].legend()
+axs[1].scatter(timesplot[index],magsplot[index],s = 10)
+axs[1].set_ylabel('Magnitude')
+axs[1].set_xlabel('Time')
+fig.savefig('2panesmallmag.png')
+
+
+
+
     
 npp1.LL.mean()
 
@@ -508,70 +530,36 @@ plt.plot(abs(npp1.lam[:,0]-(lam))/(lam))
 ((npp1.lam[:,0]/(lam+ground)).mean())
 
 
-##############################################################
-
-# real data 
-
-
-Amatrice = pd.read_csv('~/Documents/Mini_Project/Amatrice_CAT5.v20210504.csv')
-
-Amatrice['datetime'] = pd.to_datetime(Amatrice[['year', 'month', 'day', 'hour', 'minute','second']])
-Amatrice['time'] = (Amatrice['datetime']-Amatrice['datetime'][0])/ pd.to_timedelta(1, unit='H')
-
-
-Amatrice = Amatrice[['time','mw']]
-Amatrice = Amatrice.dropna()
-
-times = np.array(Amatrice['time'])
-mags = np.array(Amatrice['mw'])
-
-T_train=times[:50000]
-T_test =times[70000:71500]
-M_train = mags[:50000]+mags[:50000].min()*1.000001
-M_test = mags[70000:71500]+mags[70000:71500].min()*1.000001
-
-
-
-poissMLE = 1/np.ediff1d(T_train).mean()
-    Earthquake magnitude versus time. Magenta dots representing events in the INGV catalog are plotted on top of black dots, which represent events in the catalog presented in this study. Inset shows zoom on a two‐week period starting from the Amatrice earthquake.
-    
-T_test = times[184000:200000]
-M_test = mags[184000:200000]+mags[184000:200000].min()*1.000001
-    
-
-LLpoiss = (len(T_test)*np.log(poissMLE) - (T_test[-1]-T_test[0])*poissMLE)/len(T_test)
+#############################################################
 
 npp1 = NPP(time_step=time_step,size_rnn=64,size_nn=64,size_layer_chfn=3,size_layer_cmfn=2).set_train_data(T_train,M_train).set_model(0).compile(lr=1e-3).fit_eval(epochs=30,batch_size=256).set_test_data(T_test,M_test).predict_eval()
 
-LLNN = npp1.LL.mean()
+forcastN = np.zeros((20,10))
+for j in range(10):
+    for i in range(20):
+
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n],M_test[:n]]
+        forcastN[i,j] = npp1.forecast(hist1,len_window = 1,M0 = 3)
+
+    
+def bin_times(Tdat,len_win,time_step):
+    
+    N = np.zeros(len(Tdat)-(time_step+1))
+    
+    for i in range(len(N)):
+
+        N[i] = (Tdat[i+time_step+1:]<(Tdat[i+time_step+1]+len_win)).sum()-1
+        
+    return N
+        
+true = bin_times(T_test[:41],1,time_step)
+
+ave = np.mean(forcastN,axis=1)
+
+def RPD(x,y):
+    return 2*(x-y)/(abs(x)+abs(y))
 
 
-1",0.450660071158141
-"2",0.917282591881256
-"3",0.0771716226421459
-"4",69.1673413090729
-"5",53.0093489795735
-"6",0.886825301939296
-"7",-Inf
 
-groundMLE = 0.450660071158141
-k0MLE= 0.917282591881256
-alphaMLE = 0.0771716226421459
-cMLE = 69.1673413090729
-wMLE = 53.0093489795735
-M0 = M_test.min()
-
-
-
-LLMLE = marked_likelihood(T_test,M_test,T_test[-1],groundMLE,k0MLE,alphaMLE,M0,cMLE,tau,wMLE)/len(T_test)
-
-LLNN = 4.323748
-LLpoiss=4.068870248076798
-LLMLE = 4.215551
-
-
-result = pd.DataFrame([LLNN-LLpoiss,LLMLE-LLpoiss,LLpoiss-LLpoiss],columns=['log-likelihood gain'],index=['NN','ETAS','Poison'])
-
-
-4.323748-4.068870248076798
-4.215551-4.068870248076798
