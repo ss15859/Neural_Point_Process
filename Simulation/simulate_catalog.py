@@ -12,11 +12,11 @@ if __name__ == '__main__':
     end = dt.datetime(2100, 1, 1)
     test_end=dt.datetime(1994,1,1)
 
-    mc = 3.0
+    mc = 2
     beta = 2.4
 
     parameters = {
-    'mu': 0.8,
+    'mu': 1.2,
     'k0': 0.2,
     'a': 1.5,
     'c': 0.5,

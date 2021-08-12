@@ -109,12 +109,12 @@ class NPP():
         ## Outputs
         Int_l = layers.Dense(1, activation='softplus',kernel_initializer=abs_glorot_uniform, kernel_constraint=keras.constraints.NonNeg() )(hidden) # cumulative hazard function, positive weights
         l = layers.Lambda( lambda inputs: K.gradients(inputs[0],inputs[1])[0] )([Int_l,elapsed_time]) # hazard function
-        Int_l_mag = layers.Dense(1, activation='softplus',kernel_initializer=abs_glorot_uniform, kernel_constraint=keras.constraints.NonNeg() )(hidden_mag) # cumulative hazard function, positive weights
+        Int_l_mag = layers.Dense(1, activation='sigmoid',kernel_initializer=abs_glorot_uniform, kernel_constraint=keras.constraints.NonNeg() )(hidden_mag) # cumulative hazard function, positive weights
         l_mag= layers.Lambda( lambda inputs: K.gradients(inputs[0],inputs[1])[0] )([Int_l_mag,current_mag]) # hazard function
 
         ## define model
         self.model = Model(inputs=[event_history,elapsed_time,current_mag],outputs=[l,Int_l,l_mag,Int_l_mag])
-        self.model.add_loss( -K.mean( K.log( 1e-10 + l ) - Int_l ) ) # set loss function to be the negative log-likelihood function
+        self.model.add_loss( -K.mean( K.log( 1e-10 + l ) - Int_l + K.log(1e-10 + l_mag )) ) # set loss function to be the negative log-likelihood function
         #+K.log(1e-10 + l_mag )
         return self
 
@@ -142,16 +142,16 @@ class NPP():
                 self.best_val_loss = val_loss
                 self.best_weights = self.model.get_weights()
                 
-            if self.best_val_loss + 0.05 < val_loss: 
+            if self.best_val_loss + 1 < val_loss: 
                     self.model.stop_training = True
                 
-            if (epoch+1) % 5 == 0:
+#             if (epoch+1) % 5 == 0:
                 
-                #print('epoch: %d, current_val_loss: %f, min_val_loss: %f' % (epoch+1,val_loss,self.best_val_loss) )
+#                 #print('epoch: %d, current_val_loss: %f, min_val_loss: %f' % (epoch+1,val_loss,self.best_val_loss) )
                 
-                if (epoch+1) >= 15:
-                    if self.best_val_loss > self.history_val_loss[:-5].min() - 0.001: 
-                        self.model.stop_training = True
+#                 if (epoch+1) >= 15:
+#                     if self.best_val_loss > self.history_val_loss[:-5].min() - 0.1: 
+#                         self.model.stop_training = True
                         
         def on_train_end(self,logs=None):
             self.model.set_weights(self.best_weights)
@@ -171,7 +171,7 @@ class NPP():
         
         ## format the input data
         dM_test = np.delete(mags,0)
-        dT_test = np.ediff1d(times) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
+        dT_test = np.ediff1d(times)+1e-9 # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
         n = dT_test.shape[0]
         n2 = dM_test.shape[0]
         
@@ -190,6 +190,144 @@ class NPP():
     def predict_eval(self):
         
         [self.lam,self.Int_lam,self.mag_dist,self.Int_mag_dist] = self.model.predict([self.input_RNN_test,self.input_CHFN_test,self.input_CMFN_test],batch_size=self.input_RNN_test.shape[0])
-        self.LL = np.log(self.lam+1e-10) - self.Int_lam  # log-liklihood
+        self.LL = np.log(self.lam+1e-10) - self.Int_lam  
+        self.LLmag = np.log(1e-10 + self.mag_dist )# log-liklihood
         
         return self
+    
+    def eval_train_data(self):
+        [self.lam_train,self.Int_lam_train,self.mag_dist_train,self.Int_mag_dist_train] = self.model.predict([self.input_RNN,self.input_CHFN,self.input_CMFN],batch_size=self.input_RNN.shape[0])
+        
+        return self
+    
+    
+    
+    
+    def forecast(self,hist,M0,hours):
+        
+        def distfunc(self,x,hist):
+
+            T,M=hist
+            dM_test = np.delete(M,0)
+            dT_test = np.ediff1d(T) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
+            dT_test=np.append(dT_test,x)
+            dM_test=np.append(dM_test,M[-1])
+            n = dT_test.shape[0]
+            n2 = dM_test.shape[0]
+            input_RNN_times = np.array( [ dT_test[i:i+self.time_step] for i in range(n-self.time_step) ]).reshape(n-self.time_step,self.time_step,1)
+            input_RNN_mags = np.array( [ dM_test[i:i+self.time_step] for i in range(n2-self.time_step) ]).reshape(n2-self.time_step,self.time_step,1)
+            input_RNN_test = np.concatenate((input_RNN_times,input_RNN_mags),axis=2)
+            input_CHFN_test = dT_test[-n+self.time_step:].reshape(n-self.time_step,1)
+            input_CMFN_test = dM_test[-n+self.time_step:].reshape(n-self.time_step,1)
+
+            int_l_test = self.model.predict([input_RNN_test,input_CHFN_test,input_CMFN_test],batch_size=input_RNN_test.shape[0])[1]
+
+            return 1-np.exp(-int_l_test[-1])
+
+        def predicttime(self,hist):
+
+            u = np.random.uniform()
+            x_left = np.ediff1d(hist[0]).mean()*1e-5
+            x_right = np.ediff1d(hist[0]).mean()*1e5
+            v = 100
+
+            while(abs(v-u)>0.001):
+                x_center = np.exp((np.log(x_left)+np.log(x_right))/2)
+                v = distfunc(self,x_center,hist)
+                x_left = np.where(v<u,x_center,x_left)
+                x_right = np.where(v>=u,x_center,x_right)
+
+            tau_pred = x_center # predicted interevent interval
+
+
+            return float(tau_pred)
+
+        def magdistfunc(self,x,hist,new_time):
+
+            T, M = hist
+
+            dM_test = np.delete(M,0)
+            dT_test = np.ediff1d(T) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
+            dT_test=np.append(dT_test,new_time)
+            dM_test=np.append(dM_test,x)
+            n = dT_test.shape[0]
+            n2 = dM_test.shape[0]
+            input_RNN_times = np.array( [ dT_test[i:i+self.time_step] for i in range(n-self.time_step) ]).reshape(n-self.time_step,self.time_step,1)
+            input_RNN_mags = np.array( [ dM_test[i:i+self.time_step] for i in range(n2-self.time_step) ]).reshape(n2-self.time_step,self.time_step,1)
+            input_RNN_test = np.concatenate((input_RNN_times,input_RNN_mags),axis=2)
+            input_CHFN_test = dT_test[-n+self.time_step:].reshape(n-self.time_step,1)
+            input_CMFN_test =dM_test[-n+self.time_step:].reshape(n-self.time_step,1)
+
+
+            Int_m_test = self.model.predict([input_RNN_test,input_CHFN_test,input_CMFN_test],batch_size=input_RNN_test.shape[0])[3]
+
+            return Int_m_test[-1]
+
+        def normmagdistfunc(self,x,hist,new_time):
+            return magdistfunc(self,x,hist,new_time)/magdistfunc(self,100000000,hist,new_time)
+
+        def predict_mag(self,hist,M0,new_time):
+
+            u = np.random.uniform()
+            x_left = M0
+            x_right = 10
+            v = 100
+
+
+            while(abs(v-u)>0.001):
+                x_center = (x_left+x_right)/2
+                v = magdistfunc(self,x_center,hist,new_time)
+                x_left = np.where(v<u,x_center,x_left)
+                x_right = np.where(v>=u,x_center,x_right)
+
+                if x_left == x_right:
+                    break
+                
+            mu_pred = x_center # predicted interevent interval
+
+            return float(mu_pred)    
+        
+        
+        
+        
+        
+        T_testfor=hist[0]
+        M_testfor=hist[1]
+
+#         T_start = np.ceil(T_testfor[-1])
+        T_start = hours*np.ceil(T_testfor[-1]/hours)
+
+        predictions = []
+
+        while True:
+            
+            new_pred = predicttime(self,hist)
+            new_time = T_testfor[-1]+new_pred
+
+            if new_time-T_start>hours:
+                break
+
+#             print(new_time, end='\r')
+            if new_time>T_start:
+                predictions.append(new_time)
+
+            M_testfor=np.append(M_testfor,predict_mag(self,[T_testfor,M_testfor],M0,new_time))
+            T_testfor=np.append(T_testfor,new_time)
+
+        return(len(predictions))
+    
+    
+    def daily_forecast(self,Tdat,Mdat,ndays,repeats,M0,time_step,hours):
+    
+        Tdat = Tdat-Tdat[0] 
+        
+        forcastN = np.zeros((ndays,repeats))
+        for j in range(repeats):
+            print(j,'\r')
+            for i in range(ndays):
+
+                if len(Tdat[Tdat<=i*hours])>=time_step+1:
+                    print(i,'\r')
+                    hist1 = [Tdat[Tdat<=i*hours],Mdat[Tdat<=i*hours]]
+                    forcastN[i,j] = self.forecast(hist1,M0 = M0,hours=hours)
+

@@ -109,7 +109,7 @@ class NPP():
         ## Outputs
         Int_l = layers.Dense(1, activation='softplus',kernel_initializer=abs_glorot_uniform, kernel_constraint=keras.constraints.NonNeg() )(hidden) # cumulative hazard function, positive weights
         l = layers.Lambda( lambda inputs: K.gradients(inputs[0],inputs[1])[0] )([Int_l,elapsed_time]) # hazard function
-        Int_l_mag = layers.Dense(1, activation='softplus',kernel_initializer=abs_glorot_uniform, kernel_constraint=keras.constraints.NonNeg() )(hidden_mag) # cumulative hazard function, positive weights
+        Int_l_mag = layers.Dense(1, activation='sigmoid',kernel_initializer=abs_glorot_uniform, kernel_constraint=keras.constraints.NonNeg() )(hidden_mag) # cumulative hazard function, positive weights
         l_mag= layers.Lambda( lambda inputs: K.gradients(inputs[0],inputs[1])[0] )([Int_l_mag,current_mag]) # hazard function
 
         ## define model
@@ -142,16 +142,16 @@ class NPP():
                 self.best_val_loss = val_loss
                 self.best_weights = self.model.get_weights()
                 
-            if self.best_val_loss + 0.05 < val_loss: 
+            if self.best_val_loss + 1 < val_loss: 
                     self.model.stop_training = True
                 
-            if (epoch+1) % 5 == 0:
+#             if (epoch+1) % 5 == 0:
                 
-                #print('epoch: %d, current_val_loss: %f, min_val_loss: %f' % (epoch+1,val_loss,self.best_val_loss) )
+#                 #print('epoch: %d, current_val_loss: %f, min_val_loss: %f' % (epoch+1,val_loss,self.best_val_loss) )
                 
-                if (epoch+1) >= 15:
-                    if self.best_val_loss > self.history_val_loss[:-5].min() - 0.001: 
-                        self.model.stop_training = True
+#                 if (epoch+1) >= 15:
+#                     if self.best_val_loss > self.history_val_loss[:-5].min() - 0.1: 
+#                         self.model.stop_training = True
                         
         def on_train_end(self,logs=None):
             self.model.set_weights(self.best_weights)
@@ -190,11 +190,20 @@ class NPP():
     def predict_eval(self):
         
         [self.lam,self.Int_lam,self.mag_dist,self.Int_mag_dist] = self.model.predict([self.input_RNN_test,self.input_CHFN_test,self.input_CMFN_test],batch_size=self.input_RNN_test.shape[0])
-        self.LL = np.log(self.lam+1e-10) - self.Int_lam   + np.log(1e-10 + self.mag_dist )# log-liklihood
+        self.LL = np.log(self.lam+1e-10) - self.Int_lam  
+        self.LLmag = np.log(1e-10 + self.mag_dist )# log-liklihood
         
         return self
     
-    def forecast(self,hist,len_window,M0):
+    def eval_train_data(self):
+        [self.lam_train,self.Int_lam_train,self.mag_dist_train,self.Int_mag_dist_train] = self.model.predict([self.input_RNN,self.input_CHFN,self.input_CMFN],batch_size=self.input_RNN.shape[0])
+        
+        return self
+    
+    
+    
+    
+    def forecast(self,hist,M0,hours):
         
         def distfunc(self,x,hist):
 
@@ -267,7 +276,7 @@ class NPP():
 
             while(abs(v-u)>0.001):
                 x_center = (x_left+x_right)/2
-                v = normmagdistfunc(self,x_center,hist,new_time)
+                v = magdistfunc(self,x_center,hist,new_time)
                 x_left = np.where(v<u,x_center,x_left)
                 x_right = np.where(v>=u,x_center,x_right)
 
@@ -278,10 +287,15 @@ class NPP():
 
             return float(mu_pred)    
         
+        
+        
+        
+        
         T_testfor=hist[0]
         M_testfor=hist[1]
 
-        T_start = T_testfor[-1]
+#         T_start = np.ceil(T_testfor[-1])
+        T_start = hours*np.ceil(T_testfor[-1]/hours)
 
         predictions = []
 
@@ -290,16 +304,30 @@ class NPP():
             new_pred = predicttime(self,hist)
             new_time = T_testfor[-1]+new_pred
 
-            if new_time-T_start>len_window:
+            if new_time-T_start>hours:
                 break
 
 #             print(new_time, end='\r')
-            predictions.append(new_time)
+            if new_time>T_start:
+                predictions.append(new_time)
 
-            M_testfor=np.append(M_testfor,predict_mag(self,[T_testfor,M_testfor],3,new_time))
+            M_testfor=np.append(M_testfor,predict_mag(self,[T_testfor,M_testfor],M0,new_time))
             T_testfor=np.append(T_testfor,new_time)
 
         return(len(predictions))
     
-   
+    
+    def daily_forecast(self,Tdat,Mdat,ndays,repeats,M0,time_step,hours):
+    
+        Tdat = Tdat-Tdat[0] 
+        
+        forcastN = np.zeros((ndays,repeats))
+        for j in range(repeats):
+            print(j,'\r')
+            for i in range(ndays):
+
+                if len(Tdat[Tdat<=i*hours])>=time_step+1:
+                    print(i,'\r')
+                    hist1 = [Tdat[Tdat<=i*hours],Mdat[Tdat<=i*hours]]
+                    forcastN[i,j] = self.forecast(hist1,M0 = M0,hours=hours)
 

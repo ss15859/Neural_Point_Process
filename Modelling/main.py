@@ -4,9 +4,11 @@ import datetime as dt
 import math
 import matplotlib.pyplot as plt
 
+from scipy import integrate
+
 from NeuralPP import NPP
 
-from ETAS import marked_ETAS_intensity, marked_likelihood, movingaverage
+from ETAS import marked_ETAS_intensity, marked_likelihood, movingaverage, etas_forcast, bin_times, daily_forecast
 
 import ETAS
 
@@ -20,11 +22,11 @@ data = pd.read_csv('/home/ss15859/PhD/Neural_Point_Process/Simulation/my_synthet
 
 # #format time in days
 
-# dates = list(data['time'])
-# dates_list = (np.array([dt.datetime.strptime(date[:-3], "%Y-%m-%d %H:%M:%S.%f") for date in dates]))
-# times = (dates_list-dates_list[0])/ dt.timedelta(days=1)
-# times=times.astype('float64')
-times=data['time']
+dates = list(data['time'])
+dates_list = (np.array([dt.datetime.strptime(date[:-3], "%Y-%m-%d %H:%M:%S.%f") for date in dates]))
+times = (dates_list-dates_list[0])/ dt.timedelta(days=1)
+times=times.astype('float64')
+# times=data['time']
 
 
 test_data = pd.read_csv('/home/ss15859/PhD/Neural_Point_Process/Simulation/test_catalog.csv',index_col=0)
@@ -42,6 +44,7 @@ test_times=test_times.astype('float64')
 
 n_test = 4000
 n_train = data.shape[0]
+n_train=35000
 
 # n_train  = math.floor(0.8*data.shape[0])
 
@@ -63,8 +66,8 @@ alpha = float(params["a"])
 M0 = float(params["M0"])
 ground = float(params["mu"])
 beta = float(params["beta"])
-ground=0.8
 
+time_step=20
 print('Calculating true lambda')
 
 # calculate true intensity function
@@ -75,7 +78,7 @@ print('Done!')
 
 # shift to the right by truncation parameter for future plotting
 
-time_step=20
+
 timesplot=T_test[time_step+1:]
 lam=lam[time_step+1:]
 
@@ -534,27 +537,21 @@ plt.plot(abs(npp1.lam[:,0]-(lam))/(lam))
 
 npp1 = NPP(time_step=time_step,size_rnn=64,size_nn=64,size_layer_chfn=3,size_layer_cmfn=2).set_train_data(T_train,M_train).set_model(0).compile(lr=1e-3).fit_eval(epochs=30,batch_size=256).set_test_data(T_test,M_test).predict_eval()
 
-forcastN = np.zeros((20,10))
-for j in range(10):
-    for i in range(20):
+repeats = 100
+npoints = 300
+
+forcastN = np.zeros((npoints,repeats))
+for j in range(repeats):
+    print(j,'\r')
+    for i in range(npoints):
 
         n = i+21
     #     print(n)
         hist1 = [T_test[:n],M_test[:n]]
         forcastN[i,j] = npp1.forecast(hist1,len_window = 1,M0 = 3)
 
-    
-def bin_times(Tdat,len_win,time_step):
-    
-    N = np.zeros(len(Tdat)-(time_step+1))
-    
-    for i in range(len(N)):
-
-        N[i] = (Tdat[i+time_step+1:]<(Tdat[i+time_step+1]+len_win)).sum()-1
         
-    return N
-        
-true = bin_times(T_test[:41],1,time_step)
+true = bin_times(T_test[:npoints+21],1,time_step)
 
 ave = np.mean(forcastN,axis=1)
 
@@ -562,4 +559,244 @@ def RPD(x,y):
     return 2*(x-y)/(abs(x)+abs(y))
 
 
+forcastETAS = np.zeros((npoints,repeats))
+for j in range(repeats):
+    for i in range(npoints):
 
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n],M_test[:n]]
+        forcastETAS[i,j] = etas_forcast(hist1,1,params)
+
+aveETAS = np.mean(forcastETAS,axis=1)
+
+
+##################################################################################
+
+# simulate then train on higher M0, then add residual analysis
+
+Mcut = 3.5
+M0 = 0.3
+
+T_train = T_train[M_train>=Mcut]
+M_train = M_train[M_train>=Mcut]
+
+T_test = T_test[M_test>=Mcut]
+M_test = M_test[M_test>=Mcut]
+
+
+# wrt = pd.DataFrame()
+# wrt['time'] = T_train
+# wrt['mw'] = M_train
+# wrt.to_csv('sim_Mcut_4.0.csv')
+
+
+# params = pd.read_csv('9thJulyResultsM02.csv')
+
+params = pd.read_csv('~/PhD/Amatrice_tests/sim_Mcut_3.5_params_wrongM0.csv')
+
+
+groundMLE = params.x[0]
+k0MLE= params.x[1]
+alphaMLE = params.x[2]
+cMLE = params.x[3]
+wMLE = params.x[4]
+betaMLE = params.x[5]
+#     M0 = mags.min()
+tau =0
+
+
+
+npp1 = NPP(time_step=20,size_rnn=64,size_nn=64,size_layer_chfn=3,size_layer_cmfn=2).set_train_data(T_train,M_train).set_model(0).compile(lr=1e-3).fit_eval(epochs=30,batch_size=256).set_test_data(T_test,M_test).predict_eval()
+
+LLNN = npp1.LL.mean()
+
+
+poissMLE = 1/np.ediff1d(T_train[M_train>=Mcut]).mean()
+    
+LLpoiss = (len(T_test[M_test>=Mcut])*np.log(poissMLE) + sum(np.log(ETAS.sGR(M_test,betaMLE,M0,Mcut)))- (T_test[-1]-T_test[0])*poissMLE)/len(T_test[M_test>=Mcut])
+
+LLMLE = marked_likelihood(T_test,M_test,T_test[-1],groundMLE,k0MLE,alphaMLE,M0,Mcut,cMLE,tau,wMLE,betaMLE)/len(T_test[M_test>=Mcut])
+
+y = range(1,len(npp1.Int_lam)+1)
+t = np.cumsum(npp1.Int_lam)
+
+lam = marked_ETAS_intensity(T_test,M_test,groundMLE,k0MLE,alphaMLE,M0,Mcut,cMLE,tau,wMLE)
+
+lam_int = integrate.cumtrapz(lam, T_test, initial=0)
+yETAS = range(1,len(lam_int)+1)
+
+plt.plot(t,y,color='black',label = 'NN')
+plt.plot(lam_int,yETAS,color='green',label = 'ETAS')
+plt.plot(np.linspace(0,t[-1]),np.linspace(0,t[-1]),color = 'r',label = 'y = x')
+plt.xlabel('Transformed time')
+plt.ylabel('Cumulative number')
+plt.legend()
+# plt.title('Trained on data up to ' + str(timeupto) + ' hours from start')
+plt.show()
+
+npp1.eval_train_data()
+    
+y = range(1,len(npp1.Int_lam_train)+1)
+t = np.cumsum(npp1.Int_lam_train)
+
+lam = marked_ETAS_intensity(T_train,M_train,groundMLE,k0MLE,alphaMLE,M0,Mcut,cMLE,tau,wMLE)
+
+lam_int = integrate.cumtrapz(lam, T_train, initial=0)
+yETAS = range(1,len(lam_int)+1)
+
+plt.plot(t,y,color='black',label = 'NN')
+plt.plot(lam_int,yETAS,color='green',label = 'ETAS')
+plt.plot(np.linspace(0,t[-1]),np.linspace(0,t[-1]),color = 'r',label = 'y = x')
+plt.xlabel('Transformed time')
+plt.ylabel('Cumulative number')
+plt.legend()
+# plt.title('Trained on data up to ' + str(timeupto) + ' hours from start')
+plt.show()
+
+NNgain = LLNN-LLpoiss
+
+MLEgain = LLMLE - LLpoiss
+
+
+
+
+
+repeats = 10
+npoints = 300
+
+forcastN = np.zeros((npoints,repeats))
+for j in range(repeats):
+    print(j,'\r')
+    for i in range(npoints):
+
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n],M_test[:n]]
+        forcastN[i,j] = npp1.forecast(hist1,len_window = 1,M0 = M0)
+
+        
+ave = np.mean(forcastN,axis=1)
+        
+true = bin_times(T_test[:npoints+21],1,time_step)
+
+
+
+def RPD(x,y):
+    return 2*(x-y)/(abs(x)+abs(y))
+
+
+forcastETAS = np.zeros((npoints,repeats))
+for j in range(repeats):
+    for i in range(npoints):
+
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n],M_test[:n]]
+        forcastETAS[i,j] = etas_forcast(hist1,1,params)
+
+aveETAS = np.mean(forcastETAS,axis=1)
+
+l = np.zeros(npoints)
+for i in range(npoints):
+
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n+1],M_test[:n]]
+        l[i] = intensity(T_test[n],hist1,params)
+        
+
+#######################################################################################
+# Now daily forecasting
+
+ndays = 50
+repeats = 3
+# forcastETAS = np.zeros((ndays,repeats))
+# for j in range(repeats):
+#     for i in range(ndays):
+
+
+#         hist1 = [T_test[T_test<=i],M_test[T_test<=i]]
+#         forcastETAS[i,j] = etas_forcast(i,hist1,1,params)
+
+
+forcastETAS = daily_forecast(T_test,M_test,ndays=50,repeats=3,params=params,hours=1)
+
+aveETAS = np.mean(forcastETAS,axis=1)
+
+
+true = bin_times(T_test,hours=1)
+
+
+forcastN = npp1.daily_forecast(T_test,M_test,ndays=50,repeats=3,M0=M0,time_step=time_step,hours=1)
+
+        
+ave = np.mean(forcastN,axis=1)
+
+
+plt.scatter(range(len(true[:50])),true[:50])
+plt.scatter(range(len(ave)),ave)
+
+
+def magdistfunc(x,T,M,new_time):
+
+
+
+            dM_test = np.delete(M,0)
+            dT_test = np.ediff1d(T) # transform a series of timestamps to a series of interevent intervals: T_train -> dT_train
+            dT_test=np.append(dT_test,new_time)
+            dM_test=np.append(dM_test,x)
+            n = dT_test.shape[0]
+            n2 = dM_test.shape[0]
+            input_RNN_times = np.array( [ dT_test[i:i+npp1.time_step] for i in range(n-npp1.time_step) ]).reshape(n-npp1.time_step,npp1.time_step,1)
+            input_RNN_mags = np.array( [ dM_test[i:i+npp1.time_step] for i in range(n2-npp1.time_step) ]).reshape(n2-npp1.time_step,npp1.time_step,1)
+            input_RNN_test = np.concatenate((input_RNN_times,input_RNN_mags),axis=2)
+            input_CHFN_test = dT_test[-n+npp1.time_step:].reshape(n-npp1.time_step,1)
+            input_CMFN_test =dM_test[-n+npp1.time_step:].reshape(n-npp1.time_step,1)
+
+
+            Int_m_test = npp1.model.predict([input_RNN_test,input_CHFN_test,input_CMFN_test],batch_size=input_RNN_test.shape[0])[2]
+
+            return Int_m_test[-1]
+        
+
+
+
+def GR(m,beta,M0,Mcut):
+
+        if(isinstance(m, (list, tuple, np.ndarray))):
+            x = np.where(m>=Mcut,beta*np.exp(-beta*(m-M0)),0)
+
+        else:
+            if(m>=Mcut):
+                x = beta*np.exp(-beta*(m-M0))
+            else:
+                x= 0
+
+        return x          
+        
+x = np.linspace(0,10,100)
+index = 500
+
+# betaMLE = 1/(mags-Mcut).mean()
+# betaMLE = 1/(Amatrice.mw-M0).mean()
+
+for index in np.linspace(30,630,3):
+    index = int(index)
+    T = T_test[:index]
+    M = M_test[:index]
+    new_time = times[index]
+
+    yNN = [magdistfunc(x=i,T=T,M=M,new_time=new_time) for i in x]
+
+
+      
+
+
+    y = GR(x,betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE)
+#     y = GR(x,betaMLE,Mcut,Mcut)
+    plt.plot(x,yNN,label = 'NN Magnitude Distribution')
+    plt.plot(x,y,label = 'Gutenberg-Richter')
+    plt.hist(M,density=True,bins=10,alpha=0.5)
+    plt.legend()
+    plt.show()

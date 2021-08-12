@@ -4,9 +4,11 @@ import datetime as dt
 import math
 import matplotlib.pyplot as plt
 
+from scipy import integrate
+
 from NeuralPP import NPP
 
-from ETAS import marked_ETAS_intensity, marked_likelihood, movingaverage
+from ETAS import marked_ETAS_intensity, marked_likelihood, movingaverage, etas_forcast, bin_times, daily_forecast
 
 import ETAS
 
@@ -14,20 +16,20 @@ import ETAS
 # read in data and sort by time
 
 
-data = pd.read_csv('/home/ss15859/Documents/Mini_Project/Neural_Point_Process/Simulation/my_synthetic_catalog.csv',index_col=0)
+data = pd.read_csv('/home/ss15859/PhD/Neural_Point_Process/Simulation/my_synthetic_catalog.csv',index_col=0)
 # data = data.sort_values('time')
 
 
 # #format time in days
 
-# dates = list(data['time'])
-# dates_list = (np.array([dt.datetime.strptime(date[:-3], "%Y-%m-%d %H:%M:%S.%f") for date in dates]))
-# times = (dates_list-dates_list[0])/ dt.timedelta(days=1)
-# times=times.astype('float64')
-times=data['time']
+dates = list(data['time'])
+dates_list = (np.array([dt.datetime.strptime(date[:-3], "%Y-%m-%d %H:%M:%S.%f") for date in dates]))
+times = (dates_list-dates_list[0])/ dt.timedelta(days=1)
+times=times.astype('float64')
+# times=data['time']
 
 
-test_data = pd.read_csv('/home/ss15859/Documents/Mini_Project/Neural_Point_Process/Simulation/test_catalog.csv',index_col=0)
+test_data = pd.read_csv('/home/ss15859/PhD/Neural_Point_Process/Simulation/test_catalog.csv',index_col=0)
 test_data = test_data.sort_values('time')
 
 
@@ -40,7 +42,7 @@ test_times=test_times.astype('float64')
 
 #test-train split
 
-n_test = 12000
+n_test = 4000
 n_train = data.shape[0]
 
 # n_train  = math.floor(0.8*data.shape[0])
@@ -53,7 +55,7 @@ T_test  = np.array(test_times[:n_test])
 
 # read in and set parameters
 
-params = pd.read_csv('/home/ss15859/Documents/Mini_Project/Neural_Point_Process/Simulation/params.csv')
+params = pd.read_csv('/home/ss15859/PhD/Neural_Point_Process/Simulation/params.csv')
 
 tau=float(params["tau"])
 c= float(params["c"])
@@ -63,7 +65,7 @@ alpha = float(params["a"])
 M0 = float(params["M0"])
 ground = float(params["mu"])
 beta = float(params["beta"])
-ground=0.8
+
 
 print('Calculating true lambda')
 
@@ -83,17 +85,17 @@ lam=lam[time_step+1:]
 
 # loop over increasing size of training set and calculate relative RMSE and mean log-likelihood
 
-num=10
+num=8
 
 RMSE=np.zeros(num)
 
 LL=np.zeros(num)
 
-ln = np.linspace(np.log(10000),np.log(n_train),num)
+ln = np.linspace(10000,80000,num)
 
-for i in range(num):
+for i in ln:
     
-    n=math.floor(np.exp(ln[i]))
+    n=int(i)
     
     print('train size:  ' + str(n))
 
@@ -105,9 +107,11 @@ for i in range(num):
 # plot comparison of intensity functions around the largest magnitude event
 
     j = M_test.argmax()-time_step-1
-    index=range(j,j+90)
+    index=range(j,j+60)
     plt.plot(timesplot[index],npp1.lam[index],label='predicted')
     plt.plot(timesplot[index],lam[index],label='true')
+    plt.xlabel('time')
+    plt.ylabel('Intensity')
     plt.legend()
     plt.title('n=  '+str(n))
     plt.show()
@@ -119,8 +123,10 @@ for i in range(num):
     fig.suptitle('relative absolute error in relation to magnitude of event')
     ax1.plot(movingaverage(abs(npp1.lam[:,0]-lam)/lam,15),label="RMSE")
     ax1.set_title('n = '+str(n))
-    ax2.scatter(np.where(M_test>5.6)-np.repeat(time_step+1,len(np.where(M_test>5.6))),M_test[M_test>5.6],marker="x",label='Mag > 5.6',c="r")
-    # ax2.legend()
+    ax1.set(ylabel= 'relative absolute error')
+    ax2.scatter(np.where(M_test>6)-np.repeat(time_step+1,len(np.where(M_test>6))),M_test[M_test>6],marker="x",label='Mag > 6.0',c="r")
+    ax2.set(ylabel='Magnitude')
+    ax2.legend()
     plt.xlabel("time")
     plt.show()
 
@@ -370,6 +376,7 @@ RMSE2 = np.zeros(num)
 
 LL=np.zeros(num)
 LL2=np.zeros(num)
+LLpois = np.zeros(num)
 
 count=0
 
@@ -389,12 +396,12 @@ for i in n:
     
     print('calculating lam')
     
-    lamMLE = marked_ETAS_intensity(T_test,M_test,groundMLE,k0MLE,alphaMLE,M0,cMLE,tau,wMLE)
+#     lamMLE = marked_ETAS_intensity(T_test,M_test,groundMLE,k0MLE,alphaMLE,M0,cMLE,tau,wMLE)
 
     print('Done!')
 
 
-    lamMLE=lamMLE[time_step+1:]
+#     lamMLE=lamMLE[time_step+1:]
     
     print('train size:  ' + str(i))
 
@@ -405,16 +412,18 @@ for i in n:
 
     poissMLE = 1/np.ediff1d(T_train[:i]).mean()
     
+    LLpois[count] = (len(T_test)*np.log(poissMLE) - T_test[-1]*poissMLE)/len(T_test)
+    
 # plot comparison of intensity functions around the largest magnitude event
 
-    j = M_test.argmax()-time_step-1
-    index=range(j,j+90)
-    plt.plot(timesplot[index],npp1.lam[index],label='NN')
-    plt.plot(timesplot[index],lam[index],label='true')
-    plt.plot(timesplot[index],lamMLE[index],label='MLE')
-    plt.legend()
-    plt.title('n=  '+str(i))
-    plt.show()
+#     j = M_test.argmax()-time_step-1
+#     index=range(j,j+90)
+#     plt.plot(timesplot[index],npp1.lam[index],label='NN')
+#     plt.plot(timesplot[index],lam[index],label='true')
+#     plt.plot(timesplot[index],lamMLE[index],label='MLE')
+#     plt.legend()
+#     plt.title('n=  '+str(i))
+#     plt.show()
     
     
 #     # for largest training size plot relative absolute error over time with magnitudes
@@ -431,11 +440,11 @@ for i in n:
 
 # calculate RMSE
     
-    RMSE[count]=np.sqrt((1/lam.shape[0])*(((npp1.lam[:,0]-lam)/lam)**2).sum())
-    print('RMSE:   '+str(RMSE[count]))
+#     RMSE[count]=np.sqrt((1/lam.shape[0])*(((npp1.lam[:,0]-lam)/lam)**2).sum())
+#     print('RMSE:   '+str(RMSE[count]))
 
 
-    RMSE2[count]=np.sqrt((1/lam.shape[0])*(((lamMLE-lam)/lam)**2).sum())
+#     RMSE2[count]=np.sqrt((1/lam.shape[0])*(((lamMLE-lam)/lam)**2).sum())
     
     
     
@@ -451,13 +460,13 @@ for i in n:
     
 # plot RMSE with training size
     
-plt.plot(n,RMSE,label='NN')
-plt.plot(n,RMSE2,label='MLE')
-plt.xlabel('training size')
-plt.ylabel('relative RMSE')
-plt.legend()
-plt.title('relative RMSE with training size')
-plt.show()
+# plt.plot(n,RMSE,label='NN')
+# plt.plot(n,RMSE2,label='MLE')
+# plt.xlabel('training size')
+# plt.ylabel('relative RMSE')
+# plt.legend()
+# plt.title('relative RMSE with training size')
+# plt.show()
 
 
 # calculate true mean log-likelihood and plot against training size
@@ -468,8 +477,9 @@ TLL = marked_likelihood(T_test,M_test,T_test[-1],ground,k0,alpha,M0,c,tau,w)/len
 # FLL
 
 plt.plot(n,LL,label='NN')
-plt.plot(n,LL2,label='MLE')
-plt.hlines(TLL,10000,80000,linestyles='dashed',colors='g',label='True MLL')
+plt.plot(n,LL2,label='ETAS MLE')
+plt.plot(n,LLpois,label='Poisson MLE')
+plt.hlines(TLL,10000,80000,linestyles='dashed',colors='r',label='True MLL')
 plt.xlabel('training size')
 plt.ylabel('Mean LL')
 plt.title('Mean Log-likelihood with training size')
@@ -482,14 +492,36 @@ npp1 = NPP(time_step=time_step,size_rnn=64,size_nn=64,size_layer_chfn=3,size_lay
 
 j = M_test.argmax()-time_step-1
 
-# j=1050
-index=range(j,j+70)    
+magsplot = M_test[time_step+1:]
+
+j=190
+index=range(j,j+50)    
 plt.plot(timesplot[index],npp1.lam[index],label='NN')
-plt.plot(timesplot[index],lam[index],label='true')
+plt.plot(timesplot[index],lam[index],label='Data Generating')
+plt.xlabel('time')
+plt.ylabel('intensity')
 # plt.plot(timesplot[index],lamMLE[index],label='MLE')
 plt.legend()
-# plt.title('n=  '+str(i))
+plt.title('n=  '+str(i))
 plt.show()
+
+
+j=1915
+index=range(j,j+50)   
+fig, axs = plt.subplots(2,sharex=True)
+axs[0].plot(timesplot[index],npp1.lam[index],label='NN')
+axs[0].plot(timesplot[index],lam[index],label='Data Generating')
+axs[0].set_ylabel('intensity')
+# plt.plot(timesplot[index],lamMLE[index],label='MLE')
+axs[0].legend()
+axs[1].scatter(timesplot[index],magsplot[index],s = 10)
+axs[1].set_ylabel('Magnitude')
+axs[1].set_xlabel('Time')
+fig.savefig('2panesmallmag.png')
+
+
+
+
     
 npp1.LL.mean()
 
@@ -500,29 +532,204 @@ plt.plot(abs(npp1.lam[:,0]-(lam))/(lam))
 ((npp1.lam[:,0]/(lam+ground)).mean())
 
 
-##############################################################
-
-# real data 
-
-
-Amatrice = pd.read_csv('~/Documents/Mini_Project/Amatrice_CAT5.v20210504.csv')
-
-Amatrice['datetime'] = pd.to_datetime(Amatrice[['year', 'month', 'day', 'hour', 'minute','second']])
-Amatrice['time'] = (Amatrice['datetime']-Amatrice['datetime'][0])/ pd.to_timedelta(1, unit='H')
-
-
-Amatrice = Amatrice[['time','mw']]
-Amatrice = Amatrice.dropna()
-
-times = np.array(Amatrice['time'])
-mags = np.array(Amatrice['mw'])
-
-T_train=times[:100000]
-T_test =times[70000:71500]
-M_train = mags[:100000]+1
-M_test = mags[70000:71500]+1
-
+#############################################################
 
 npp1 = NPP(time_step=time_step,size_rnn=64,size_nn=64,size_layer_chfn=3,size_layer_cmfn=2).set_train_data(T_train,M_train).set_model(0).compile(lr=1e-3).fit_eval(epochs=30,batch_size=256).set_test_data(T_test,M_test).predict_eval()
+
+repeats = 100
+npoints = 300
+
+forcastN = np.zeros((npoints,repeats))
+for j in range(repeats):
+    print(j,'\r')
+    for i in range(npoints):
+
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n],M_test[:n]]
+        forcastN[i,j] = npp1.forecast(hist1,len_window = 1,M0 = 3)
+
+        
+true = bin_times(T_test[:npoints+21],1,time_step)
+
+ave = np.mean(forcastN,axis=1)
+
+def RPD(x,y):
+    return 2*(x-y)/(abs(x)+abs(y))
+
+
+forcastETAS = np.zeros((npoints,repeats))
+for j in range(repeats):
+    for i in range(npoints):
+
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n],M_test[:n]]
+        forcastETAS[i,j] = etas_forcast(hist1,1,params)
+
+aveETAS = np.mean(forcastETAS,axis=1)
+
+
+##################################################################################
+
+# simulate then train on higher M0, then add residual analysis
+
+Mcut = 3.5
+M0 = 0.3
+
+T_train = T_train[M_train>=Mcut]
+M_train = M_train[M_train>=Mcut]
+
+T_test = T_test[M_test>=Mcut]
+M_test = M_test[M_test>=Mcut]
+
+
+# wrt = pd.DataFrame()
+# wrt['time'] = T_train
+# wrt['mw'] = M_train
+# wrt.to_csv('sim_Mcut_4.0.csv')
+
+
+# params = pd.read_csv('9thJulyResultsM02.csv')
+
+params = pd.read_csv('~/PhD/Amatrice_tests/sim_Mcut_3.5_params_wrongM0.csv')
+
+
+groundMLE = params.x[0]
+k0MLE= params.x[1]
+alphaMLE = params.x[2]
+cMLE = params.x[3]
+wMLE = params.x[4]
+betaMLE = params.x[5]
+#     M0 = mags.min()
+tau =0
+
+
+
+npp1 = NPP(time_step=20,size_rnn=64,size_nn=64,size_layer_chfn=3,size_layer_cmfn=2).set_train_data(T_train,M_train).set_model(0).compile(lr=1e-3).fit_eval(epochs=30,batch_size=256).set_test_data(T_test,M_test).predict_eval()
+
+LLNN = npp1.LL.mean()
+
+
+poissMLE = 1/np.ediff1d(T_train[M_train>=Mcut]).mean()
+    
+LLpoiss = (len(T_test[M_test>=Mcut])*np.log(poissMLE) + sum(np.log(ETAS.sGR(M_test,betaMLE,M0,Mcut)))- (T_test[-1]-T_test[0])*poissMLE)/len(T_test[M_test>=Mcut])
+
+LLMLE = marked_likelihood(T_test,M_test,T_test[-1],groundMLE,k0MLE,alphaMLE,M0,Mcut,cMLE,tau,wMLE,betaMLE)/len(T_test[M_test>=Mcut])
+
+y = range(1,len(npp1.Int_lam)+1)
+t = np.cumsum(npp1.Int_lam)
+
+lam = marked_ETAS_intensity(T_test,M_test,groundMLE,k0MLE,alphaMLE,M0,Mcut,cMLE,tau,wMLE)
+
+lam_int = integrate.cumtrapz(lam, T_test, initial=0)
+yETAS = range(1,len(lam_int)+1)
+
+plt.plot(t,y,color='black',label = 'NN')
+plt.plot(lam_int,yETAS,color='green',label = 'ETAS')
+plt.plot(np.linspace(0,t[-1]),np.linspace(0,t[-1]),color = 'r',label = 'y = x')
+plt.xlabel('Transformed time')
+plt.ylabel('Cumulative number')
+plt.legend()
+# plt.title('Trained on data up to ' + str(timeupto) + ' hours from start')
+plt.show()
+
+npp1.eval_train_data()
+    
+y = range(1,len(npp1.Int_lam_train)+1)
+t = np.cumsum(npp1.Int_lam_train)
+
+lam = marked_ETAS_intensity(T_train,M_train,groundMLE,k0MLE,alphaMLE,M0,Mcut,cMLE,tau,wMLE)
+
+lam_int = integrate.cumtrapz(lam, T_train, initial=0)
+yETAS = range(1,len(lam_int)+1)
+
+plt.plot(t,y,color='black',label = 'NN')
+plt.plot(lam_int,yETAS,color='green',label = 'ETAS')
+plt.plot(np.linspace(0,t[-1]),np.linspace(0,t[-1]),color = 'r',label = 'y = x')
+plt.xlabel('Transformed time')
+plt.ylabel('Cumulative number')
+plt.legend()
+# plt.title('Trained on data up to ' + str(timeupto) + ' hours from start')
+plt.show()
+
+NNgain = LLNN-LLpoiss
+
+MLEgain = LLMLE - LLpoiss
+
+
+
+
+
+repeats = 10
+npoints = 300
+
+forcastN = np.zeros((npoints,repeats))
+for j in range(repeats):
+    print(j,'\r')
+    for i in range(npoints):
+
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n],M_test[:n]]
+        forcastN[i,j] = npp1.forecast(hist1,len_window = 1,M0 = M0)
+
+        
+ave = np.mean(forcastN,axis=1)
+        
+true = bin_times(T_test[:npoints+21],1,time_step)
+
+
+
+def RPD(x,y):
+    return 2*(x-y)/(abs(x)+abs(y))
+
+
+forcastETAS = np.zeros((npoints,repeats))
+for j in range(repeats):
+    for i in range(npoints):
+
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n],M_test[:n]]
+        forcastETAS[i,j] = etas_forcast(hist1,1,params)
+
+aveETAS = np.mean(forcastETAS,axis=1)
+
+l = np.zeros(npoints)
+for i in range(npoints):
+
+        n = i+21
+    #     print(n)
+        hist1 = [T_test[:n+1],M_test[:n]]
+        l[i] = intensity(T_test[n],hist1,params)
+        
+
+#######################################################################################
+# Now daily forecasting
+
+ndays = 200
+repeats = 3
+# forcastETAS = np.zeros((ndays,repeats))
+# for j in range(repeats):
+#     for i in range(ndays):
+
+
+#         hist1 = [T_test[T_test<=i],M_test[T_test<=i]]
+#         forcastETAS[i,j] = etas_forcast(i,hist1,1,params)
+
+
+forcastETAS = daily_forecast(T_test,M_test,ndays=200,repeats=3,params=params,hours=1)
+
+aveETAS = np.mean(forcastETAS,axis=1)
+
+
+true = bin_times(T_test)
+
+
+forcastN = npp1.daily_forecast(T_test,M_test,ndays=200,repeats=3,M0=M0,time_step=time_step,hours=1)
+
+        
+ave = np.mean(forcastN,axis=1)
 
 
