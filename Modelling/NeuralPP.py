@@ -9,9 +9,6 @@ from tensorflow.keras.models import Model
 from tensorflow.keras import regularizers
 
 
-
-
-
 class NPP():
     
     def __init__(self,time_step,size_rnn,size_nn,size_layer_chfn,size_layer_cmfn):
@@ -263,8 +260,8 @@ class NPP():
 
             return Int_m_test[-1]
 
-        def normmagdistfunc(self,x,hist,new_time):
-            return magdistfunc(self,x,hist,new_time)/magdistfunc(self,100000000,hist,new_time)
+#         def normmagdistfunc(self,x,hist,new_time):
+#             return magdistfunc(self,x,hist,new_time)/magdistfunc(self,100000000,hist,new_time)
 
         def predict_mag(self,hist,M0,new_time):
 

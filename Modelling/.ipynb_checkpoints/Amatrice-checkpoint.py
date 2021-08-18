@@ -196,13 +196,14 @@ for timeupto in limit:
 #     plt.show()
 
     
-    forcastN = npp1.daily_forecast(T_test,M_test,ndays=int(np.floor((T_test[-1]-T_test[0])/24)),repeats=1,M0=M0,time_step=time_step,hours=24)
+#     forcastN = npp1.daily_forecast(T_test,M_test,ndays=int(np.floor((T_test[-1]-T_test[0])/24)),repeats=1,M0=M0,time_step=time_step,hours=24)
     
-    ave = np.mean(forcastN,axis=1)
+#     # ave = np.mean(forcastN,axis=1)
+#     ave = forcastN
     
-    plt.scatter(range(len(true)),np.log(true))
-    plt.scatter(range(len(aveETAS)),np.log(aveETAS))
-    plt.show()
+#     plt.scatter(range(len(true)),np.log(true))
+#     plt.scatter(range(len(aveETAS)),np.log(aveETAS))
+#     plt.show()
     
 plt.plot(limit,NN,label='NN')
 plt.plot(limit,MLE,label='ETAS')

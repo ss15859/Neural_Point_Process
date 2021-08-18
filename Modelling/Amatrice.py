@@ -196,13 +196,14 @@ for timeupto in limit:
 #     plt.show()
 
     
-    forcastN = npp1.daily_forecast(T_test,M_test,ndays=int(np.floor((T_test[-1]-T_test[0])/24)),repeats=1,M0=M0,time_step=time_step,hours=24)
+#     forcastN = npp1.daily_forecast(T_test,M_test,ndays=int(np.floor((T_test[-1]-T_test[0])/24)),repeats=1,M0=M0,time_step=time_step,hours=24)
     
-    ave = np.mean(forcastN,axis=1)
+#     # ave = np.mean(forcastN,axis=1)
+#     ave = forcastN
     
-    plt.scatter(range(len(true)),np.log(true))
-    plt.scatter(range(len(aveETAS)),np.log(aveETAS))
-    plt.show()
+#     plt.scatter(range(len(true)),np.log(true))
+#     plt.scatter(range(len(aveETAS)),np.log(aveETAS))
+#     plt.show()
     
 plt.plot(limit,NN,label='NN')
 plt.plot(limit,MLE,label='ETAS')
@@ -278,10 +279,10 @@ def GR(m,beta,M0,Mcut):
 x = np.linspace(0,10,100)
 index = 500
 
-# betaMLE = 1/(mags-Mcut).mean()
+betaMLE = 1/(mags-Mcut).mean()
 # betaMLE = 1/(Amatrice.mw-M0).mean()
 
-for index in np.linspace(30,630,3):
+for index in np.linspace(30,1630,3):
     index = int(index)
     T = times[:index]
     M = mags[:index]
@@ -293,8 +294,8 @@ for index in np.linspace(30,630,3):
       
 
 
-    y = GR(x,betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE)
-#     y = GR(x,betaMLE,Mcut,Mcut)
+#     y = GR(x,betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE)
+    y = GR(x,betaMLE,Mcut,Mcut)
     plt.plot(x,yNN,label = 'NN Magnitude Distribution')
     plt.plot(x,y,label = 'Gutenberg-Richter')
     plt.hist(M,density=True,bins=10,alpha=0.5)
