@@ -4,6 +4,7 @@ import collections
 import math
 from scipy.optimize import minimize
 import pandas as pd
+from scipy import integrate
 
     
 # expected number of aftershocks
@@ -16,21 +17,23 @@ def k(m,params,Mcut):
     else:
         if(m>=Mcut):
             x = params['k0']*np.exp(params['a']*(m-params['M0']))
+
         else:
             x= 0
+            
     
     return x
 
 def sGR(m,params,Mcut):
 
     if(isinstance(m, (list, tuple, np.ndarray,pd.Series))):
-        x = np.where(m>=Mcut,params['beta']*np.exp(-params['beta']*(m-params['M0'])),1)
+        x = np.where(m>=Mcut,params['beta']*np.exp(-params['beta']*(m-params['M0'])),0)
         
     else:
         if(m>=Mcut):
             x = params['beta']*np.exp(-params['beta']*(m-params['M0']))
         else:
-            x= 1
+            x= 0
     
     return x
 
@@ -48,18 +51,18 @@ def H(t,params):
 
 # Function to calculate the intesity function from event times and magnitudes
 
-def marked_ETAS_intensity(Tdat,Mdat,mu,k0,alpha,M0,Mcut,c,tau,omega):
+def generate_intensity(Tdat,Mdat,params,Mcut):
     
     lam = np.zeros_like(Tdat)
-    lam[0] = mu
+    lam[0] = params['mu']
     for i in range(len(lam)):
     
         cumulative = 0
         for j in range(0,i):
-            cumulative += k(Mdat[j],k0,alpha,M0,Mcut)*f(Tdat[i]-Tdat[j],c,tau,omega)
+            cumulative += k(Mdat[j],params,Mcut)*f(Tdat[i]-Tdat[j],params)
 
     
-        lam[i] = mu + cumulative
+        lam[i] = params['mu'] + cumulative
     
     return lam 
 
@@ -76,7 +79,7 @@ def marked_likelihood(Tdat,Mdat,maxtime,Mcut,params):
     temp = temp - sum(k(Mdat,params,Mcut) * H(maxtime - Tdat,params))
     temp = temp + sum(np.log(sGR(Mdat,params,Mcut)))
     
-    return temp
+    return temp/len(Tdat)
 
 # def likelihood(Tdat,Mdat,maxtime,mu,k0,alpha,M0,Mcut,c,tau,omega,beta):
 #     temp = np.log(mu)
@@ -100,8 +103,10 @@ def likelihood(Tdat,Mdat,maxtime,Mcut,params):
     temp = temp - params['mu']*(maxtime-Tdat[0])
     temp = temp - sum(k(Mdat,params,Mcut) * H(maxtime - Tdat,params))
     
-    return temp
+    return temp/len(Tdat)
 
+def mag_likelihood(Mdat,params,Mcut):
+    return (np.log(sGR(Mdat,params,Mcut)*np.exp((Mcut-params['M0'])*params['beta']))).mean()
 
 
 # function used in plotting relative absolute error over time. The function averages a function f(x) over some window [x-r,x+r]
@@ -113,11 +118,11 @@ def movingaverage(interval, window_size):
 def simulate_ETAS_mag(params):
 
     u = np.random.uniform()
-    m = (-1 * np.log(1 - u ) / params['beta'][0]) + params['M0'][0]
+    m = (-1 * np.log(1 - u ) / params['beta']) + params['M0']
     return m
     
     
-def intensity(t,hist,params):
+def intensity(t,hist,params,Mcut):
     
     if(t == hist[0][-1]):
         n = len(hist[0])-1
@@ -128,15 +133,15 @@ def intensity(t,hist,params):
     cumulative = 0
     
     for j in range(0,n):
-        cumulative += k(hist[1][j],params['k0'][0],params['a'][0],params['M0'][0],params['M0'][0])*f(t-hist[0][j],params['c'][0],params['tau'][0],params['omega'][0])
+        cumulative += k(hist[1][j],params,Mcut)*f(t-hist[0][j],params)
 
 
-    lam = params['mu'][0] + cumulative
+    lam = params['mu'] + cumulative
     return lam
     
     
     
-def etas_forcast(tstart,hist,len_window,params):
+def etas_forcast(tstart,hist,len_window,params,Mcut):
     
 #     tstart = hist[0][-1]
     t=tstart
@@ -145,13 +150,13 @@ def etas_forcast(tstart,hist,len_window,params):
     
     while True:
         
-        B = intensity(t,hist,params)
+        B = intensity(t,hist,params,Mcut)
         tau  = np.random.exponential(1/B)
 
         if t+tau> tstart+len_window:
             break
         
-        if np.random.uniform() < intensity(t+tau,hist,params)/B:
+        if np.random.uniform() < intensity(t+tau,hist,params,Mcut)/B:
             m = simulate_ETAS_mag(params)
             hist = [np.append(hist[0],t+tau),np.append(hist[1],m)]
             count+=1
@@ -160,7 +165,7 @@ def etas_forcast(tstart,hist,len_window,params):
         
     return count
 
-def daily_forecast(Tdat,Mdat,ndays,repeats,params,hours):
+def daily_forecast(Tdat,Mdat,ndays,repeats,params,hours,Mcut):
     
     Tdat = Tdat-Tdat[0]
     
@@ -170,7 +175,7 @@ def daily_forecast(Tdat,Mdat,ndays,repeats,params,hours):
 
 
             hist1 = [Tdat[Tdat<=i*hours],Mdat[Tdat<=i*hours]]
-            forcastETAS[i,j] = etas_forcast(i*hours,hist1,1*hours,params)
+            forcastETAS[i,j] = etas_forcast(i*hours,hist1,1*hours,params,Mcut)
 
 
     return forcastETAS
@@ -187,13 +192,13 @@ def daily_forecast(Tdat,Mdat,ndays,repeats,params,hours):
 #     return N
 
 
-def bin_times(Tdat,hours):
+def bin_times(Tdat,hours,ndays):
     
     rounding = np.floor(Tdat/hours)
     
-    output = np.zeros(int(rounding[-1]-rounding[0])+1)
+    output = np.zeros(ndays)
     
-    for i in range(len(output)):
+    for i in range(ndays):
          
         output[i] = sum(rounding==i+rounding[0])
          
@@ -255,3 +260,17 @@ def maxlikelihoodETAS(Tdat,Mdat,M0,maxtime=np.nan,initval=np.nan):
         
     
     return dic
+
+
+
+
+def generate_residuals(Tdat,Mdat,params,Mcut):
+    
+    
+    lam = generate_intensity(Tdat,Mdat,params,Mcut)
+
+    lam_int = integrate.cumtrapz(lam, Tdat, initial=0)
+    yETAS = range(1,len(lam_int)+1)
+    
+    return lam_int, yETAS
+

@@ -9,8 +9,6 @@ from scipy import integrate
 
 from NeuralPP import NPP
 
-from ETAS import marked_ETAS_intensity, marked_likelihood, movingaverage, sGR, bin_times, daily_forecast, likelihood
-
 import ETAS
 
 
@@ -26,7 +24,7 @@ Amatrice = Amatrice.dropna()
 
 timeupto = 4800
 timefrom = 0
-Mcut = 3.0
+Mcut = 2.5
 M0= 0.3
 M0pred = Mcut
 
@@ -42,7 +40,7 @@ mags = np.array(sub_catalog['mw'])
 
 limit = np.linspace(600,4200,7)
 
-MLE = []
+ETASMLE = []
 NN = []
 poiss=[]
 NNmagLik = []
@@ -70,22 +68,22 @@ for timeupto in limit:
 
     filename = '~/PhD/Amatrice_tests/paramsMcut:'+str(Mcut)+'00000_timefrom:0_timeupto:' + str(timeupto)+ '.csv'
 
-    params = pd.read_csv(filename)
-
-
-    groundMLE = params.x[0]
-    k0MLE= params.x[1]
-    alphaMLE = params.x[2]
-    cMLE = params.x[3]
-    wMLE = params.x[4]
-#     betaMLE = params.x[5]
-    betaMLE = 1/(Amatrice.mw-M0).mean()
-#     betaMLE = 1/(M_test-Mcut).mean()
-#     M0 = mags.min()
-    tau =0
+    params = pd.read_csv(filename)    
     
-    d = {'mu': groundMLE, 'k0': k0MLE,'a':alphaMLE,'c':cMLE,'omega':wMLE,'tau':tau,'M0':M0,'beta':betaMLE}
-    params = pd.DataFrame(data=d,index=[0])
+    MLE = {'mu': params.x[0], 'k0': params.x[1],'a':params.x[2],'c':params.x[3],'omega':params.x[4],'M0':M0,'beta': 1/(Amatrice.mw-M0).mean()}
+
+#     groundMLE = params.x[0]
+#     k0MLE= params.x[1]
+#     alphaMLE = params.x[2]
+#     cMLE = params.x[3]
+#     wMLE = params.x[4]
+# #     betaMLE = params.x[5]
+#     betaMLE = 1/(Amatrice.mw-M0).mean()
+# #     betaMLE = 1/(M_test-Mcut).mean()
+# #     M0 = mags.min()
+#     tau =0
+    
+
 #     groundMLE = 0.0355 /24
 #     k0MLE= 0.0936
 #     alphaMLE = np.log(10)
@@ -100,11 +98,11 @@ for timeupto in limit:
 
     poissMLE = 1/np.ediff1d(T_train[M_train>=M0pred]).mean()
     
-    LLpoiss = (len(T_test[M_test>=M0pred])*np.log(poissMLE) + sum(np.log(ETAS.sGR(M_test,betaMLE,M0,M0pred)))- (T_test[-1]-T_test[0])*poissMLE)/len(T_test[M_test>=M0pred])
+    LLpoiss = (len(T_test[M_test>=M0pred])*np.log(poissMLE) + sum(np.log(ETAS.sGR(M_test,MLE,M0pred)))- (T_test[-1]-T_test[0])*poissMLE)/len(T_test[M_test>=M0pred])
 
-    LLMLE = likelihood(T_test,M_test,T_test[-1],groundMLE,k0MLE,alphaMLE,M0,M0pred,cMLE,tau,wMLE,betaMLE)/len(T_test[M_test>=M0pred])
+    LLMLE = ETAS.likelihood(T_test,M_test,T_test[-1],M0pred,MLE)/len(T_test[M_test>=M0pred])
     
-    MLEmag = (np.log(sGR(M_test,betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE))).mean()
+    MLEmag = ETAS.mag_likelihood(M_test,params=MLE,Mcut=Mcut)
     
 #     MLEmag = (np.log(sGR(M_test,betaMLE,Mcut,Mcut))).mean()
 
@@ -120,46 +118,41 @@ for timeupto in limit:
 
     NN = np.append(NN,NNgain)
 
-    MLE = np.append(MLE,MLEgain)
+    ETASMLE = np.append(ETASMLE,MLEgain)
     
     NNmagLik = np.append(NNmagLik,NNmag)
     
     MLEmagLik = np.append(MLEmagLik,MLEmag)
     
-    plt.scatter(M_test[21:],np.exp(npp1.LLmag),label='NN')
-    plt.scatter(M_test,sGR(M_test,betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE),label='ETAS')
-#     plt.scatter(M_test,sGR(M_test,betaMLE,Mcut,Mcut),label='ETAS')
-    plt.legend()
-    plt.show()
+#     plt.scatter(M_test[21:],np.exp(npp1.LLmag),label='NN')
+#     plt.scatter(M_test,sGR(M_test,betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE),label='ETAS')
+# #     plt.scatter(M_test,sGR(M_test,betaMLE,Mcut,Mcut),label='ETAS')
+#     plt.legend()
+#     plt.show()
     
-    plt.scatter(M_test[21:],np.log(sGR(M_test[21:],betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE))-(npp1.LLmag).reshape(-1))
-#     plt.scatter(M_test[21:],np.log(sGR(M_test[21:],betaMLE,Mcut,Mcut)-(npp1.LLmag).reshape(-1)))
-    plt.show()
+#     plt.scatter(M_test[21:],np.log(sGR(M_test[21:],betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE))-(npp1.LLmag).reshape(-1))
+# #     plt.scatter(M_test[21:],np.log(sGR(M_test[21:],betaMLE,Mcut,Mcut)-(npp1.LLmag).reshape(-1)))
+#     plt.show()
     
-    print((np.log(sGR(M_test[21:],betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE))-(npp1.LLmag).reshape(-1)).mean())
-#     print((np.log(sGR(M_test[21:],betaMLE,Mcut,Mcut)-(npp1.LLmag).reshape(-1)).mean()))
+#     print((np.log(sGR(M_test[21:],betaMLE,M0,Mcut)*np.exp((Mcut-M0)*betaMLE))-(npp1.LLmag).reshape(-1)).mean())
+# #     print((np.log(sGR(M_test[21:],betaMLE,Mcut,Mcut)-(npp1.LLmag).reshape(-1)).mean()))
     
-#     index = np.where(T_test>4000)[0][0]
+# #     index = np.where(T_test>4000)[0][0]
+    #######################################
+#     y = range(1,len(npp1.Int_lam)+1)
+#     t = np.cumsum(npp1.Int_lam)
     
-    y = range(1,len(npp1.Int_lam)+1)
-    t = np.cumsum(npp1.Int_lam)
+#     lam_int, yETAS  = ETAS.generate_residuals(T_test,M_test,params=MLE,Mcut=MLE['M0'])
 
-    lam = marked_ETAS_intensity(T_test,M_test,groundMLE,k0MLE,alphaMLE,M0,Mcut,cMLE,tau,wMLE)
-
-    lam_int = integrate.cumtrapz(lam, T_test, initial=0)
-    yETAS = range(1,len(lam_int)+1)
-
-    plt.plot(t,y,color='black',label = 'NN')
-    plt.plot(lam_int,yETAS,color='green',label = 'ETAS')
-#     if(index!=0):
-#         plt.axvline(x=t[index], linestyle='--')
-    plt.plot(np.linspace(0,t[-1]),np.linspace(0,t[-1]),color = 'r',label = 'y = x')
-    plt.xlabel('Transformed time')
-    plt.ylabel('Cumulative number')
-    plt.legend()
-    plt.title('Trained on data up to ' + str(timeupto) + ' hours from start')
-    plt.savefig('residual_'+str(timeupto)+ str(Mcut)+'forecasting.png')
-    plt.show()
+#     plt.plot(t,y,color='black',label = 'NN')
+#     plt.plot(lam_int,yETAS,color='green',label = 'ETAS')
+#     plt.plot(np.linspace(0,t[-1]),np.linspace(0,t[-1]),color = 'r',label = 'Poisson',linestyle='--')
+#     plt.xlabel('Transformed time')
+#     plt.ylabel('Cumulative number')
+#     plt.legend()
+#     plt.title('Trained on data up to ' + str(timeupto) + ' hours from start')
+#     plt.savefig('residual_'+str(timeupto)+ str(Mcut)+'forecasting.png')
+#     plt.show()
     
     npp1.eval_train_data()
     
@@ -168,16 +161,11 @@ for timeupto in limit:
     y = range(1,len(npp1.Int_lam_train)+1)
     t = np.cumsum(npp1.Int_lam_train)
 
-    lam = marked_ETAS_intensity(T_train,M_train,groundMLE,k0MLE,alphaMLE,M0,Mcut,cMLE,tau,wMLE)
-
-    lam_int = integrate.cumtrapz(lam, T_train, initial=0)
-    yETAS = range(1,len(lam_int)+1)
-
+    lam_int, yETAS  = ETAS.generate_residuals(T_train,M_train,params=MLE,Mcut=MLE['M0'])    
+    
     plt.plot(t,y,color='black',label = 'NN')
     plt.plot(lam_int,yETAS,color='green',label = 'ETAS')
-#     if(index.size!=0):
-#         plt.axvline(x=t[index[0]], linestyle='--')
-    plt.plot(np.linspace(0,t[-1]),np.linspace(0,t[-1]),color = 'r',label = 'y = x')
+    plt.plot(np.linspace(0,t[-1]),np.linspace(0,t[-1]),color = 'r',label = 'Poisson',linestyle='--')
     plt.xlabel('Transformed time')
     plt.ylabel('Cumulative number')
     plt.legend()
@@ -206,7 +194,7 @@ for timeupto in limit:
 #     plt.show()
     
 plt.plot(limit,NN,label='NN')
-plt.plot(limit,MLE,label='ETAS')
+plt.plot(limit,ETASMLE,label='ETAS')
 plt.legend()
 plt.xlabel('time from start / hours')
 plt.ylabel('log-likelihood gain')
@@ -223,14 +211,14 @@ plt.title('Magnitude log-likelihood with increasing training size for M0_train =
 plt.savefig('mag_loglik_gain_'+str(Mcut) +'.png')
 plt.show()
 
-plt.plot(limit,NN+poiss,label='NN')
-plt.plot(limit,MLE+poiss,label='ETAS')
-plt.legend()
-plt.xlabel('time from start / hours')
-plt.ylabel('log-likelihood')
-plt.title('log-likelihood with increasing training size for M0_train = 2.5, M0_test = 3.0')
-# plt.savefig('raw_loglik_3.0,3.5.png')
-plt.show()
+# plt.plot(limit,NN+poiss,label='NN')
+# plt.plot(limit,MLE+poiss,label='ETAS')
+# plt.legend()
+# plt.xlabel('time from start / hours')
+# plt.ylabel('log-likelihood')
+# plt.title('log-likelihood with increasing training size for M0_train = 2.5, M0_test = 3.0')
+# # plt.savefig('raw_loglik_3.0,3.5.png')
+# plt.show()
 
 
 
@@ -279,10 +267,10 @@ def GR(m,beta,M0,Mcut):
 x = np.linspace(0,10,100)
 index = 500
 
-# betaMLE = 1/(mags-Mcut).mean()
+betaMLE = 1/(mags-Mcut).mean()
 # betaMLE = 1/(Amatrice.mw-M0).mean()
 
-for index in np.linspace(30,630,3):
+for index in np.linspace(30,1630,3):
     index = int(index)
     T = times[:index]
     M = mags[:index]
